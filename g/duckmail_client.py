@@ -302,8 +302,9 @@ class DuckMailClient:
                     preview = content[:200].replace('\n', ' ')
                     self._log("info", f"[{self.email}] 内容预览: {preview}...")
 
-                # 查找验证码（6位数字）
-                code_match = re.search(r'\b\d{6}\b', content)
+                # 查找验证码（格式: XXX-XXX，字母和数字混合）
+                # xAI 验证码格式如: Y5J-7UN, HV8-LMR
+                code_match = re.search(r'\b[A-Z0-9]{3}-[A-Z0-9]{3}\b', content)
                 if code_match:
                     code = code_match.group()
                     self._log("info", f"[{self.email}] ✅ 找到验证码: {code}")

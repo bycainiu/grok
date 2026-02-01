@@ -89,14 +89,13 @@ class DuckMailEmailService:
                 self.current_token = token
                 self.client.token = token
 
-            # 轮询获取验证码（DuckMail 返回 6 位纯数字）
+            # 轮询获取验证码（xAI 验证码格式: XXX-XXX，如 Y5J-7UN）
             verify_code = self.client.get_verification_code(timeout=120, interval=3)
 
             if verify_code:
-                # 格式化为 XXX-XXX 格式，与 Worker 邮箱兼容
-                formatted_code = f"{verify_code[:3]}-{verify_code[3:]}"
+                # xAI 验证码已经是 XXX-XXX 格式，直接使用
                 # 返回 HTML 格式，与 Worker 邮箱的原始格式匹配
-                return f"<strong>{formatted_code}</strong>"
+                return f"<strong>{verify_code}</strong>"
             else:
                 return None
 
