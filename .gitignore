@@ -42,3 +42,4 @@ Thumbs.db
 # 测试
 test/
 *.test.py
+.ace-tool/

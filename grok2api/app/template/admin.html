@@ -1287,9 +1287,12 @@
 
   <!-- 注册机配置模态框 -->
   <div id="modalRegisterConfig" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-    <div class="bg-background rounded-lg border border-border w-full max-w-2xl shadow-xl">
-      <div class="flex items-center justify-between p-4 border-b border-border">
-        <h3 class="text-lg font-semibold">注册机配置</h3>
+    <div class="bg-background rounded-lg border border-border w-full max-w-3xl shadow-xl max-h-[90vh] overflow-auto">
+      <div class="flex items-center justify-between p-4 border-b border-border sticky top-0 bg-background z-10">
+        <div>
+          <h3 class="text-lg font-semibold">注册机配置</h3>
+          <p class="text-xs text-muted-foreground mt-1">配置 DuckMail 邮箱服务和注册参数</p>
+        </div>
         <button onclick="closeRegisterConfigModal()"
           class="text-muted-foreground hover:text-foreground transition-colors">
           <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1298,38 +1301,128 @@
           </svg>
         </button>
       </div>
-      <div class="p-6 space-y-4">
-        <div>
-          <label class="cfg-label">Worker 域名</label>
-          <input id="regWorkerDomain" type="text" class="cfg-input" placeholder="https://your-worker.example.com">
-          <p class="cfg-desc">邮箱服务 API 地址</p>
+
+      <div class="p-6 space-y-6">
+        <!-- DuckMail 服务配置 -->
+        <div class="space-y-4">
+          <div class="flex items-center gap-2 pb-2 border-b border-border">
+            <svg class="h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <h4 class="font-semibold">DuckMail 邮箱服务</h4>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <div>
+              <label class="cfg-label">API 地址 <span class="text-red-500">*</span></label>
+              <input id="regDuckmailBaseUrl" type="text" class="cfg-input" value="https://api.duckmail.sbs" placeholder="https://api.duckmail.sbs">
+              <p class="cfg-desc">DuckMail API 地址（默认即可）</p>
+            </div>
+            <div>
+              <label class="cfg-label">API Key</label>
+              <input id="regDuckmailApiKey" type="password" class="cfg-input" placeholder="留空使用免费服务">
+              <p class="cfg-desc">API 密钥（可选，留空使用免费额度）</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button onclick="testDuckmailConnection()" class="btn-secondary text-sm">
+              <svg class="h-4 w-4 mr-1 inline" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <polyline points="22 4 12 14.01 9 11.01" />
+              </svg>
+              测试连接
+            </button>
+            <button onclick="loadDuckmailDomains()" class="btn-secondary text-sm">
+              <svg class="h-4 w-4 mr-1 inline" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+              刷新域名
+            </button>
+            <span id="duckmailTestResult" class="text-sm"></span>
+          </div>
         </div>
-        <div>
-          <label class="cfg-label">邮箱域名</label>
-          <input id="regEmailDomain" type="text" class="cfg-input" placeholder="example.com">
-          <p class="cfg-desc">用于生成临时邮箱</p>
+
+        <!-- 域名选择 -->
+        <div class="space-y-4">
+          <div class="flex items-center gap-2 pb-2 border-b border-border">
+            <svg class="h-5 w-5 text-green-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10" />
+              <path d="M12 6l6 6-6 6" />
+            </svg>
+            <h4 class="font-semibold">邮箱域名</h4>
+          </div>
+
+          <div>
+            <label class="cfg-label">选择域名 <span class="text-red-500">*</span></label>
+            <select id="regEmailDomain" class="cfg-input">
+              <option value="">加载中...</option>
+            </select>
+            <p class="cfg-desc">从 DuckMail 获取的可用域名列表</p>
+          </div>
+
+          <div id="domainInfo" class="hidden rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 p-3">
+            <p class="text-sm text-blue-700 dark:text-blue-300">
+              <strong>💡 提示：</strong>选择不同域名可以分散注册请求，提高成功率
+            </p>
+          </div>
         </div>
-        <div>
-          <label class="cfg-label">管理员密码</label>
-          <input id="regAdminPassword" type="password" class="cfg-input" placeholder="管理员密码">
-          <p class="cfg-desc">Worker 管理后台密码</p>
+
+        <!-- 注册参数 -->
+        <div class="space-y-4">
+          <div class="flex items-center gap-2 pb-2 border-b border-border">
+            <svg class="h-5 w-5 text-purple-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M12 1v6m0 6v6" />
+              <path d="m4.93 4.93 4.24 4.24m5.66-5.66 4.24 4.24" />
+              <path d="M19.07 4.93 4.24 19.07" />
+              <path d="M4.93 19.07 4.24-4.24" />
+            </svg>
+            <h4 class="font-semibold">注册参数</h4>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <div>
+              <label class="cfg-label">并发线程数</label>
+              <input id="regThreads" type="number" class="cfg-input" value="3" min="1" max="10">
+              <p class="cfg-desc">建议: 1-3（DuckMail 免费版限制请求频率）</p>
+            </div>
+            <div>
+              <label class="cfg-label">YesCaptcha Key (可选)</label>
+              <input id="regYesCaptcha" type="text" class="cfg-input" placeholder="留空使用本地 Turnstile Solver">
+              <p class="cfg-desc">使用第三方 CAPTCHA 服务</p>
+            </div>
+          </div>
         </div>
-        <div>
-          <label class="cfg-label">并发线程数</label>
-          <input id="regThreads" type="number" class="cfg-input" value="8" min="1" max="50">
-          <p class="cfg-desc">同时运行的注册线程数量</p>
-        </div>
-        <div>
-          <label class="cfg-label">YesCaptcha Key (可选)</label>
-          <input id="regYesCaptcha" type="text" class="cfg-input" placeholder="留空使用本地 Turnstile Solver">
-          <p class="cfg-desc">使用第三方 CAPTCHA 服务</p>
+
+        <!-- 使用说明 -->
+        <div class="rounded-lg bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 p-4">
+          <h5 class="font-semibold text-sm text-yellow-800 dark:text-yellow-200 mb-2">📖 使用说明</h5>
+          <ol class="text-xs text-yellow-700 dark:text-yellow-300 space-y-1 list-decimal list-inside">
+            <li><strong>DuckMail</strong> 是免费的临时邮箱服务，无需配置 Worker</li>
+            <li>点击 <strong>"测试连接"</strong> 确认服务可访问</li>
+            <li>点击 <strong>"刷新域名"</strong> 获取可用域名列表</li>
+            <li>选择域名后即可启动注册机</li>
+            <li>建议使用 <strong>1-3 线程</strong> 避免触发限流</li>
+          </ol>
         </div>
       </div>
+
       <div class="flex items-center justify-end gap-3 p-4 border-t border-border bg-secondary/50">
         <button onclick="closeRegisterConfigModal()"
           class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors border border-input bg-background hover:bg-accent h-9 px-4">取消</button>
         <button onclick="saveRegisterConfig()"
-          class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4">保存</button>
+          class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4">
+          <svg class="h-4 w-4 mr-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+            <polyline points="17 21 17 13 7 13 7 21" />
+            <polyline points="7 3 7 8 15 8" />
+          </svg>
+          保存配置
+        </button>
       </div>
     </div>
   </div>
@@ -2108,22 +2201,38 @@
 
     // 打开配置模态框
     const openRegisterConfigModal = async () => {
+      $('modalRegisterConfig').classList.remove('hidden');
+      // 先加载已保存的配置
+      await loadRegisterConfig();
+      // 再加载域名列表（会自动选中已保存的域名）
+      await loadDuckmailDomains();
+    };
+
+    // 加载注册机配置（从服务器获取并填充表单）
+    const loadRegisterConfig = async () => {
       try {
         const r = await apiRequest('/api/register/config');
         if (!r) return;
         const d = await r.json();
-        if (d.success) {
-          registerConfig = d.data;
-          $('regWorkerDomain').value = registerConfig.worker_domain || '';
-          $('regEmailDomain').value = registerConfig.email_domain || '';
-          $('regAdminPassword').value = registerConfig.admin_password || '';
-          $('regThreads').value = registerConfig.concurrent_threads || 8;
-          $('regYesCaptcha').value = registerConfig.yescaptcha_key || '';
+        if (d.success && d.data) {
+          const config = d.data;
+          // 填充表单字段
+          $('regDuckmailBaseUrl').value = config.duckmail_base_url || 'https://api.duckmail.sbs';
+          $('regDuckmailApiKey').value = config.duckmail_api_key || '';
+          $('regThreads').value = config.concurrent_threads || 3;
+          $('regYesCaptcha').value = config.yescaptcha_key || '';
+          // 保存当前配置以便后续使用
+          registerConfig = {
+            duckmail_base_url: config.duckmail_base_url || 'https://api.duckmail.sbs',
+            duckmail_api_key: config.duckmail_api_key || '',
+            email_domain: config.email_domain || '',
+            concurrent_threads: config.concurrent_threads || 3,
+            yescaptcha_key: config.yescaptcha_key || ''
+          };
         }
       } catch (e) {
         console.error('加载配置失败:', e);
       }
-      $('modalRegisterConfig').classList.remove('hidden');
     };
 
     // 关闭配置模态框
@@ -2131,20 +2240,97 @@
       $('modalRegisterConfig').classList.add('hidden');
     };
 
+    // 测试 DuckMail 连接
+    const testDuckmailConnection = async () => {
+      const baseUrl = $('regDuckmailBaseUrl').value.trim();
+      const apiKey = $('regDuckmailApiKey').value.trim();
+      const resultSpan = $('duckmailTestResult');
+
+      resultSpan.innerHTML = '<span class="text-blue-600">测试中...</span>';
+
+      try {
+        const r = await apiRequest('/api/register/duckmail/test', {
+          method: 'POST',
+          body: JSON.stringify({ base_url: baseUrl, api_key: apiKey })
+        });
+        if (!r) return;
+        const d = await r.json();
+
+        if (d.success && d.data.success) {
+          resultSpan.innerHTML = `<span class="text-green-600">✅ 连接成功 (${d.data.domains_available} 个域名)</span>`;
+          showToast('DuckMail 连接成功', 'success');
+        } else {
+          resultSpan.innerHTML = `<span class="text-red-600">❌ 连接失败: ${d.data?.error || '未知错误'}</span>`;
+          showToast('DuckMail 连接失败', 'error');
+        }
+      } catch (e) {
+        resultSpan.innerHTML = `<span class="text-red-600">❌ 测试异常: ${e.message}</span>`;
+        showToast('测试失败: ' + e.message, 'error');
+      }
+    };
+
+    // 加载 DuckMail 域名列表
+    const loadDuckmailDomains = async () => {
+      const baseUrl = $('regDuckmailBaseUrl').value.trim();
+      const apiKey = $('regDuckmailApiKey').value.trim();
+      const select = $('regEmailDomain');
+
+      select.innerHTML = '<option value="">加载中...</option>';
+      select.disabled = true;
+
+      try {
+        const r = await apiRequest('/api/register/duckmail/domains');
+        if (!r) return;
+        const d = await r.json();
+
+        if (d.success && d.data.domains.length > 0) {
+          select.innerHTML = d.data.domains.map(domain =>
+            `<option value="${domain}">${domain}</option>`
+          ).join('');
+          select.disabled = false;
+
+          // 自动选中已保存的域名
+          if (registerConfig && registerConfig.email_domain) {
+            select.value = registerConfig.email_domain;
+          }
+
+          // 显示提示信息
+          $('domainInfo').classList.remove('hidden');
+          showToast(`已加载 ${d.data.count} 个可用域名`, 'success');
+        } else {
+          select.innerHTML = '<option value="">无可用域名</option>';
+          showToast('未能获取域名列表', 'error');
+        }
+      } catch (e) {
+        select.innerHTML = '<option value="">加载失败</option>';
+        showToast('加载域名失败: ' + e.message, 'error');
+      }
+    };
+
     // 保存配置
     const saveRegisterConfig = async () => {
-      const config = {
-        worker_domain: $('regWorkerDomain').value.trim(),
-        email_domain: $('regEmailDomain').value.trim(),
-        admin_password: $('regAdminPassword').value.trim(),
-        concurrent_threads: parseInt($('regThreads').value) || 8,
-        yescaptcha_key: $('regYesCaptcha').value.trim()
-      };
+      const duckmail_base_url = $('regDuckmailBaseUrl').value.trim();
+      const duckmail_api_key = $('regDuckmailApiKey').value.trim();
+      const email_domain = $('regEmailDomain').value.trim();
+      const concurrent_threads = parseInt($('regThreads').value) || 3;
+      const yescaptcha_key = $('regYesCaptcha').value.trim();
 
-      if (!config.worker_domain || !config.email_domain || !config.admin_password) {
-        showToast('请填写完整的配置信息', 'error');
+      if (!duckmail_base_url) {
+        showToast('请填写 DuckMail API 地址', 'error');
         return;
       }
+      if (!email_domain) {
+        showToast('请选择邮箱域名', 'error');
+        return;
+      }
+
+      const config = {
+        duckmail_base_url,
+        duckmail_api_key,
+        email_domain,
+        concurrent_threads,
+        yescaptcha_key
+      };
 
       try {
         const r = await apiRequest('/api/register/config', {
@@ -2167,8 +2353,8 @@
 
     // 启动注册机
     const startRegister = async () => {
-      if (!registerConfig.worker_domain || !registerConfig.email_domain || !registerConfig.admin_password) {
-        showToast('请先配置注册机参数', 'error');
+      if (!registerConfig || !registerConfig.email_domain) {
+        showToast('请先配置 DuckMail 邮箱服务', 'error');
         openRegisterConfigModal();
         return;
       }
@@ -2276,10 +2462,15 @@
       }
     };
 
-    // 定时刷新注册机状态
+    // 定时刷新注册机状态和日志
     setInterval(() => {
       if (!$('panelRegister').classList.contains('hidden')) {
         loadRegisterStatus();
+        // 当注册机运行时，自动刷新日志
+        const statusText = $('regRunning').textContent;
+        if (statusText.includes('运行中')) {
+          loadRegisterLogs();
+        }
       }
     }, 5000);
   </script>

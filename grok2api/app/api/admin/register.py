@@ -58,10 +58,13 @@ _register_status = {
 
 class RegisterConfigRequest(BaseModel):
     """注册机配置请求"""
-    worker_domain: str
-    email_domain: str
-    admin_password: str
-    concurrent_threads: int = 8
+    # DuckMail 配置
+    duckmail_base_url: str = "https://api.duckmail.sbs"
+    duckmail_api_key: str = ""
+    # 域名选择
+    email_domain: str = ""
+    # 注册参数
+    concurrent_threads: int = 3
     yescaptcha_key: Optional[str] = None
 
 
@@ -240,10 +243,10 @@ async def get_register_config(_: bool = Depends(verify_admin_session)) -> Dict[s
             return {
                 "success": True,
                 "data": {
-                    "worker_domain": "",
+                    "duckmail_base_url": "https://api.duckmail.sbs",
+                    "duckmail_api_key": "",
                     "email_domain": "",
-                    "admin_password": "",
-                    "concurrent_threads": 8,
+                    "concurrent_threads": 3,
                     "yescaptcha_key": ""
                 }
             }
@@ -251,10 +254,10 @@ async def get_register_config(_: bool = Depends(verify_admin_session)) -> Dict[s
         return {
             "success": True,
             "data": {
-                "worker_domain": config.get("WORKER_DOMAIN", ""),
+                "duckmail_base_url": config.get("DUCKMAIL_BASE_URL", "https://api.duckmail.sbs"),
+                "duckmail_api_key": config.get("DUCKMAIL_API_KEY", ""),
                 "email_domain": config.get("EMAIL_DOMAIN", ""),
-                "admin_password": config.get("ADMIN_PASSWORD", ""),
-                "concurrent_threads": int(config.get("CONCURRENT_THREADS", "8")),
+                "concurrent_threads": int(config.get("CONCURRENT_THREADS", "3")),
                 "yescaptcha_key": config.get("YESCAPTCHA_KEY", "")
             }
         }
@@ -268,9 +271,9 @@ async def save_register_config(request: RegisterConfigRequest, _: bool = Depends
     """保存注册机配置"""
     try:
         config = {
-            "WORKER_DOMAIN": request.worker_domain,
+            "DUCKMAIL_BASE_URL": request.duckmail_base_url,
+            "DUCKMAIL_API_KEY": request.duckmail_api_key,
             "EMAIL_DOMAIN": request.email_domain,
-            "ADMIN_PASSWORD": request.admin_password,
             "CONCURRENT_THREADS": str(request.concurrent_threads)
         }
         if request.yescaptcha_key:
@@ -278,7 +281,7 @@ async def save_register_config(request: RegisterConfigRequest, _: bool = Depends
 
         _save_config(config)
 
-        logger.info(f"注册机配置已更新: {request.worker_domain}")
+        logger.info(f"注册机配置已更新: {request.duckmail_base_url}")
         return {"success": True, "message": "配置已保存"}
     except Exception as e:
         logger.error(f"保存注册机配置失败: {e}")
@@ -297,9 +300,9 @@ async def start_register(request: RegisterStartRequest, _: bool = Depends(verify
 
         # 先保存配置
         config = {
-            "WORKER_DOMAIN": request.config.worker_domain,
+            "DUCKMAIL_BASE_URL": request.config.duckmail_base_url,
+            "DUCKMAIL_API_KEY": request.config.duckmail_api_key,
             "EMAIL_DOMAIN": request.config.email_domain,
-            "ADMIN_PASSWORD": request.config.admin_password,
             "CONCURRENT_THREADS": str(request.config.concurrent_threads)
         }
         if request.config.yescaptcha_key:
@@ -314,9 +317,9 @@ async def start_register(request: RegisterStartRequest, _: bool = Depends(verify
         # 准备环境变量
         env = os.environ.copy()
         env["TURNSTILE_SOLVER_URL"] = "http://turnstile-solver:5072"
-        env["WORKER_DOMAIN"] = request.config.worker_domain
+        env["DUCKMAIL_BASE_URL"] = request.config.duckmail_base_url
+        env["DUCKMAIL_API_KEY"] = request.config.duckmail_api_key
         env["EMAIL_DOMAIN"] = request.config.email_domain
-        env["ADMIN_PASSWORD"] = request.config.admin_password
         env["CONCURRENT_THREADS"] = str(request.config.concurrent_threads)
         if request.config.yescaptcha_key:
             env["YESCAPTCHA_KEY"] = request.config.yescaptcha_key
@@ -531,3 +534,63 @@ def _parse_register_log(line: str):
     elif "[-]" in line or "失败" in line:
         _register_status["stats"]["total_attempts"] += 1
         _save_register_status()
+
+
+# === DuckMail 邮箱服务 API ===
+
+@router.get("/api/register/duckmail/domains")
+async def get_duckmail_domains(_: bool = Depends(verify_admin_session)) -> Dict[str, Any]:
+    """获取 DuckMail 可用域名列表"""
+    try:
+        import sys
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from g import DuckMailClient
+
+        # 从配置读取 DuckMail API 地址
+        duckmail_base_url = os.getenv("DUCKMAIL_BASE_URL", "https://api.duckmail.sbs")
+        duckmail_api_key = os.getenv("DUCKMAIL_API_KEY", "")
+
+        client = DuckMailClient(
+            base_url=duckmail_base_url,
+            api_key=duckmail_api_key
+        )
+
+        domains = client.get_available_domains()
+        return {
+            "success": True,
+            "data": {
+                "domains": domains,
+                "count": len(domains),
+                "base_url": duckmail_base_url
+            }
+        }
+    except Exception as e:
+        logger.error(f"获取域名列表失败: {e}")
+        raise HTTPException(status_code=500, detail={"error": f"获取域名失败: {e}"})
+
+
+@router.post("/api/register/duckmail/test")
+async def test_duckmail_connection(
+    base_url: str = "",
+    api_key: str = "",
+    _: bool = Depends(verify_admin_session)
+) -> Dict[str, Any]:
+    """测试 DuckMail 连接"""
+    try:
+        import sys
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from g import DuckMailClient
+
+        client = DuckMailClient(
+            base_url=base_url or "https://api.duckmail.sbs",
+            api_key=api_key
+        )
+
+        result = client.test_connection()
+        return {
+            "success": result["success"],
+            "data": result
+        }
+    except Exception as e:
+        logger.error(f"测试连接失败: {e}")
+        raise HTTPException(status_code=500, detail={"error": f"测试失败: {e}"})
