@@ -1,5 +1,13 @@
 """
-邮箱服务类
+邮箱服务类（已废弃）
+
+.. deprecated::
+    此服务已被 DuckMailEmailService 替代。
+    保留此文件仅为向后兼容，建议使用 DuckMailEmailService。
+
+    使用方法：
+    from g import DuckMailEmailService
+    email_service = DuckMailEmailService()
 """
 import os
 import requests
@@ -9,7 +17,7 @@ from dotenv import load_dotenv
 
 
 class EmailService:
-    """邮箱服务类"""
+    """邮箱服务类（已废弃，请使用 DuckMailEmailService）"""
 
     def __init__(self):
         """初始化邮箱服务"""
