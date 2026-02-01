@@ -211,13 +211,24 @@ async def get_register_status(_: bool = Depends(verify_admin_session)) -> Dict[s
                 # 检查进程是否存在
                 import psutil
                 if not psutil.pid_exists(status["pid"]):
+                    logger.warning(f"进程 {status['pid']} 不存在，更新状态为停止")
                     status["running"] = False
                     status["pid"] = None
                     _register_status.update(status)
                     _save_register_status()
+                else:
+                    # 进程存在，尝试获取进程名称确认
+                    try:
+                        proc = psutil.Process(status["pid"])
+                        proc_name = proc.name()
+                        logger.debug(f"进程 {status['pid']} 运行中: {proc_name}")
+                    except Exception as e:
+                        logger.warning(f"无法获取进程 {status['pid']} 信息: {e}")
             except ImportError:
                 # 如果没有 psutil，跳过检查
-                pass
+                logger.warning("psutil 未安装，无法验证进程状态")
+            except Exception as e:
+                logger.error(f"检查进程状态失败: {e}")
 
         # 读取生成的账号
         keys_data = await _read_generated_keys()
@@ -330,13 +341,15 @@ async def start_register(request: RegisterStartRequest, _: bool = Depends(verify
 
         # 启动进程
         process = subprocess.Popen(
-            ["python", "grok.py"],
+            ["python", "-u", "grok.py"],  # 添加 -u 参数禁用缓冲
             cwd=str(PROJECT_ROOT),
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            universal_newlines=True
+            universal_newlines=True,
+            bufsize=1  # 行缓冲
         )
+        logger.info(f"注册机进程已创建，PID: {process.pid}, 环境变量: CONCURRENT_THREADS={env.get('CONCURRENT_THREADS')}, EMAIL_DOMAIN={env.get('EMAIL_DOMAIN')}")
 
         # 更新状态
         _register_status["running"] = True
@@ -498,18 +511,24 @@ async def clear_register_keys(_: bool = Depends(verify_admin_session)) -> Dict[s
 async def _monitor_register_process(process: subprocess.Popen, log_file: Path):
     """监控注册机进程并记录日志"""
     try:
+        logger.info(f"开始监控注册机进程 (PID: {process.pid}), 日志文件: {log_file}")
         with open(log_file, 'a', encoding='utf-8') as f:
+            line_count = 0
             for line in process.stdout:
                 line = line.strip()
                 if line:
                     f.write(f"{line}\n")
                     f.flush()
+                    line_count += 1
+                    # 每写入 10 行日志记录一次
+                    if line_count % 10 == 0:
+                        logger.info(f"已记录 {line_count} 行日志")
                     # 解析日志更新统计
                     _parse_register_log(line)
 
         # 进程结束
         returncode = process.wait()
-        logger.info(f"注册机进程已退出 (返回码: {returncode})")
+        logger.info(f"注册机进程已退出 (PID: {process.pid}, 返回码: {returncode})")
 
         # 更新状态
         global _register_status

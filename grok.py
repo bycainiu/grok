@@ -225,10 +225,16 @@ def main():
         return
 
     # 2. 启动
-    try:
-        t = int(input("\n并发数 (默认8): ").strip() or 8)
-    except: t = 8
-    
+    # 从环境变量读取并发数，如果不存在则使用默认值 8
+    concurrent_threads = os.getenv("CONCURRENT_THREADS")
+    if concurrent_threads:
+        try:
+            t = int(concurrent_threads)
+        except:
+            t = 8
+    else:
+        t = 8
+
     print(f"[*] 启动 {t} 个线程...")
     with concurrent.futures.ThreadPoolExecutor(max_workers=t) as executor:
         # 只提交与线程数相等的任务，让它们在内部无限循环
