@@ -2275,11 +2275,19 @@
       const apiKey = $('regDuckmailApiKey').value.trim();
       const select = $('regEmailDomain');
 
+      if (!baseUrl) {
+        showToast('请先填写 DuckMail API 地址', 'error');
+        return;
+      }
+
       select.innerHTML = '<option value="">加载中...</option>';
       select.disabled = true;
 
       try {
-        const r = await apiRequest('/api/register/duckmail/domains');
+        const r = await apiRequest('/api/register/duckmail/domains', {
+          method: 'POST',
+          body: JSON.stringify({ base_url: baseUrl, api_key: apiKey })
+        });
         if (!r) return;
         const d = await r.json();
 

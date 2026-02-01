@@ -538,21 +538,21 @@ def _parse_register_log(line: str):
 
 # === DuckMail 邮箱服务 API ===
 
-@router.get("/api/register/duckmail/domains")
-async def get_duckmail_domains(_: bool = Depends(verify_admin_session)) -> Dict[str, Any]:
+@router.post("/api/register/duckmail/domains")
+async def get_duckmail_domains(
+    base_url: str = "",
+    api_key: str = "",
+    _: bool = Depends(verify_admin_session)
+) -> Dict[str, Any]:
     """获取 DuckMail 可用域名列表"""
     try:
         import sys
         sys.path.insert(0, str(PROJECT_ROOT))
         from g import DuckMailClient
 
-        # 从配置读取 DuckMail API 地址
-        duckmail_base_url = os.getenv("DUCKMAIL_BASE_URL", "https://api.duckmail.sbs")
-        duckmail_api_key = os.getenv("DUCKMAIL_API_KEY", "")
-
         client = DuckMailClient(
-            base_url=duckmail_base_url,
-            api_key=duckmail_api_key
+            base_url=base_url or "https://api.duckmail.sbs",
+            api_key=api_key
         )
 
         domains = client.get_available_domains()
@@ -561,7 +561,7 @@ async def get_duckmail_domains(_: bool = Depends(verify_admin_session)) -> Dict[
             "data": {
                 "domains": domains,
                 "count": len(domains),
-                "base_url": duckmail_base_url
+                "base_url": base_url or "https://api.duckmail.sbs"
             }
         }
     except Exception as e:
