@@ -2481,6 +2481,177 @@
         }
       }
     }, 5000);
+
+    // === WebSocket 实时推送 ===
+    let registerWebSocket = null;
+    let wsReconnectAttempts = 0;
+    let wsMaxReconnectAttempts = 5;
+    let wsReconnectDelay = 3000; // 3秒后重连
+
+    const connectRegisterWebSocket = () => {
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        console.warn('[WebSocket] 未登录，跳过连接');
+        return;
+      }
+
+      // 构建 WebSocket URL
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsHost = window.location.host;
+      const wsUrl = `${wsProtocol}//${wsHost}/ws/register?token=${token}`;
+
+      console.log('[WebSocket] 正在连接...', wsUrl);
+
+      try {
+        registerWebSocket = new WebSocket(wsUrl);
+
+        registerWebSocket.onopen = () => {
+          console.log('[WebSocket] 连接成功');
+          wsReconnectAttempts = 0;
+          // 连接成功后发送心跳
+          if (registerWebSocket.readyState === WebSocket.OPEN) {
+            registerWebSocket.send('ping');
+          }
+        };
+
+        registerWebSocket.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            console.log('[WebSocket] 收到消息:', message.type);
+
+            switch (message.type) {
+              case 'status_update':
+                handleStatusUpdate(message.data);
+                break;
+              case 'log_update':
+                handleLogUpdate(message.data);
+                break;
+              case 'stats_update':
+                handleStatsUpdate(message.data);
+                break;
+              default:
+                console.log('[WebSocket] 未知消息类型:', message.type);
+            }
+          } catch (e) {
+            console.error('[WebSocket] 解析消息失败:', e, event.data);
+          }
+        };
+
+        registerWebSocket.onerror = (error) => {
+          console.error('[WebSocket] 错误:', error);
+        };
+
+        registerWebSocket.onclose = (event) => {
+          console.log('[WebSocket] 连接关闭:', event.code, event.reason);
+          registerWebSocket = null;
+
+          // 尝试重连（仅当面板可见时）
+          if (!$('panelRegister').classList.contains('hidden') &&
+              wsReconnectAttempts < wsMaxReconnectAttempts) {
+            wsReconnectAttempts++;
+            console.log(`[WebSocket] 尝试重连 (${wsReconnectAttempts}/${wsMaxReconnectAttempts})...`);
+            setTimeout(connectRegisterWebSocket, wsReconnectDelay);
+          }
+        };
+      } catch (e) {
+        console.error('[WebSocket] 连接失败:', e);
+      }
+    };
+
+    const handleStatusUpdate = (data) => {
+      console.log('[WebSocket] 状态更新:', data);
+      const running = data.running || false;
+
+      // 更新运行状态
+      $('regRunning').innerHTML = running
+        ? '<span class="text-green-600">● 运行中</span>'
+        : '<span class="text-gray-400">○ 已停止</span>';
+
+      // 更新按钮状态
+      $('btnStartRegister').disabled = running;
+      $('btnStopRegister').disabled = !running;
+
+      // 更新统计
+      $('regSuccess').textContent = data.stats?.success_count || 0;
+      $('regTokenCount').textContent = data.keys?.token_count || 0;
+
+      // 更新账号列表
+      if (data.keys && data.keys.accounts) {
+        const accounts = data.keys.accounts;
+        if (accounts.length === 0) {
+          $('registerAccounts').innerHTML = '<p class="text-gray-500 text-sm">暂无数据</p>';
+        } else {
+          const accountsHtml = accounts.map(acc => `
+            <div class="flex items-center justify-between p-2 border-b border-border">
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium truncate">${acc.email}</div>
+                <div class="text-xs text-muted-foreground">SSO: ${acc.sso_short}</div>
+              </div>
+            </div>
+          `).join('');
+          $('registerAccounts').innerHTML = accountsHtml;
+          $('regAccountCount').textContent = `${accounts.length} 个账号`;
+        }
+      }
+    };
+
+    const handleLogUpdate = (data) => {
+      console.log('[WebSocket] 日志更新:', data.logs?.length || 0, '行');
+      if (!data.logs || data.logs.length === 0) return;
+
+      const logsDiv = $('registerLogs');
+      if (!logsDiv) return;
+
+      // 追加新日志
+      data.logs.forEach(line => {
+        let color = 'text-green-400';
+        if (line.includes('[-]') || line.includes('错误') || line.includes('失败')) {
+          color = 'text-red-400';
+        } else if (line.includes('[!]') || line.includes('警告') || line.includes('注意')) {
+          color = 'text-yellow-400';
+        } else if (line.includes('[*]') || line.includes('信息')) {
+          color = 'text-blue-400';
+        }
+
+        const logLine = document.createElement('div');
+        logLine.className = color;
+        logLine.textContent = line;
+        logsDiv.appendChild(logLine);
+      });
+
+      // 自动滚动到底部
+      logsDiv.scrollTop = logsDiv.scrollHeight;
+    };
+
+    const handleStatsUpdate = (data) => {
+      console.log('[WebSocket] 统计更新:', data);
+      $('regSuccess').textContent = data.success_count || 0;
+    };
+
+    // 当切换到注册机面板时，连接 WebSocket
+    const originalSwitchTab = switchTab;
+    switchTab = (target) => {
+      originalSwitchTab(target);
+
+      if (target === 'register') {
+        // 连接 WebSocket
+        if (!registerWebSocket || registerWebSocket.readyState === WebSocket.CLOSED) {
+          connectRegisterWebSocket();
+        }
+        // 立即加载一次状态
+        loadRegisterStatus();
+      } else {
+        // 离开注册机面板时，关闭 WebSocket（可选）
+        // if (registerWebSocket && registerWebSocket.readyState === WebSocket.OPEN) {
+        //   registerWebSocket.close();
+        // }
+      }
+    };
+
+    // 页面加载时，如果已经在注册机面板，连接 WebSocket
+    if (!$('panelRegister').classList.contains('hidden')) {
+      connectRegisterWebSocket();
+    }
   </script>
 </body>
 

@@ -5,16 +5,80 @@ import os
 import subprocess
 import json
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Set
 from datetime import datetime
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends, Header, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from app.core.logger import logger
 from app.api.admin.manage import verify_admin_session
 
 router = APIRouter(tags=["注册机管理"])
+
+# WebSocket 连接管理器
+class RegisterConnectionManager:
+    """注册机 WebSocket 连接管理器"""
+
+    def __init__(self):
+        self.active_connections: Set[WebSocket] = set()
+
+    async def connect(self, websocket: WebSocket):
+        """接受新的 WebSocket 连接"""
+        await websocket.accept()
+        self.active_connections.add(websocket)
+        logger.info(f"[WebSocket] 新连接加入，当前连接数: {len(self.active_connections)}")
+
+    def disconnect(self, websocket: WebSocket):
+        """断开 WebSocket 连接"""
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+            logger.info(f"[WebSocket] 连接断开，当前连接数: {len(self.active_connections)}")
+
+    async def broadcast(self, message: Dict[str, Any]):
+        """向所有连接的客户端广播消息"""
+        if not self.active_connections:
+            return
+
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception as e:
+                logger.warning(f"[WebSocket] 发送消息失败: {e}")
+                disconnected.append(connection)
+
+        # 清理断开的连接
+        for connection in disconnected:
+            self.disconnect(connection)
+
+    async def send_status_update(self, status: Dict[str, Any]):
+        """发送状态更新"""
+        await self.broadcast({
+            "type": "status_update",
+            "data": status
+        })
+
+    async def send_log_update(self, log_lines: List[str]):
+        """发送日志更新"""
+        await self.broadcast({
+            "type": "log_update",
+            "data": {
+                "logs": log_lines,
+                "count": len(log_lines)
+            }
+        })
+
+    async def send_stats_update(self, stats: Dict[str, Any]):
+        """发送统计更新"""
+        await self.broadcast({
+            "type": "stats_update",
+            "data": stats
+        })
+
+
+# 全局连接管理器实例
+ws_manager = RegisterConnectionManager()
 
 # 常量 - 检测是否在 Docker 环境中
 def _get_project_root():
@@ -513,9 +577,15 @@ async def clear_register_keys(_: bool = Depends(verify_admin_session)) -> Dict[s
 
 async def _monitor_register_process(process: subprocess.Popen, log_file: Path):
     """监控注册机进程并记录日志"""
+    global _register_status
+
     try:
         logger.info(f"开始监控注册机进程 (PID: {process.pid}), 日志文件: {log_file}")
         line_count = 0
+        # 用于批量推送日志的缓冲区
+        log_buffer = []
+        buffer_size = 5  # 每5行推送一次
+
         with open(log_file, 'a', encoding='utf-8') as f:
             for line in process.stdout:
                 line = line.strip()
@@ -526,21 +596,43 @@ async def _monitor_register_process(process: subprocess.Popen, log_file: Path):
                     # 同时输出到 logger（便于调试）
                     logger.info(f"[注册机] {line}")
                     line_count += 1
+
+                    # 添加到日志缓冲区
+                    log_buffer.append(line)
+
+                    # 每写入 buffer_size 行或到达特定计数时推送
+                    if len(log_buffer) >= buffer_size or line_count % 10 == 0:
+                        # 实时推送日志到 WebSocket 客户端
+                        if ws_manager.active_connections:
+                            asyncio.create_task(ws_manager.send_log_update(log_buffer.copy()))
+                        log_buffer.clear()
+
                     # 每写入 10 行日志记录一次
                     if line_count % 10 == 0:
                         logger.info(f"已记录 {line_count} 行日志")
-                    # 解析日志更新统计
-                    _parse_register_log(line)
+
+                    # 解析日志更新统计，并推送状态更新
+                    stats_updated = _parse_register_log(line, broadcast=True)
+                    if stats_updated and ws_manager.active_connections:
+                        # 推送完整状态更新
+                        asyncio.create_task(ws_manager.send_status_update(_register_status.copy()))
+
+        # 推送剩余的日志
+        if log_buffer and ws_manager.active_connections:
+            asyncio.create_task(ws_manager.send_log_update(log_buffer))
 
         # 进程结束
         returncode = process.wait()
         logger.info(f"注册机进程已退出 (PID: {process.pid}, 返回码: {returncode})")
 
-        # 更新状态
-        global _register_status
+        # 更新状态并推送
         _register_status["running"] = False
         _register_status["pid"] = None
         _save_register_status()
+
+        # 推送最终状态
+        if ws_manager.active_connections:
+            asyncio.create_task(ws_manager.send_status_update(_register_status.copy()))
 
     except Exception as e:
         logger.error(f"监控注册机进程失败: {e}")
@@ -548,8 +640,16 @@ async def _monitor_register_process(process: subprocess.Popen, log_file: Path):
         logger.error(traceback.format_exc())
 
 
-def _parse_register_log(line: str):
-    """解析注册机日志更新统计"""
+def _parse_register_log(line: str, broadcast: bool = False) -> bool:
+    """解析注册机日志更新统计
+
+    Args:
+        line: 日志行
+        broadcast: 是否广播更新（用于WebSocket推送）
+
+    Returns:
+        bool: 是否更新了统计信息
+    """
     global _register_status
 
     # 检测成功注册
@@ -557,10 +657,15 @@ def _parse_register_log(line: str):
         _register_status["stats"]["success_count"] += 1
         _register_status["stats"]["last_register_time"] = datetime.now().isoformat()
         _register_status["stats"]["total_attempts"] += 1
-        _save_register_status()
+        if not broadcast:
+            _save_register_status()
+        return True
     elif "[-]" in line or "失败" in line:
         _register_status["stats"]["total_attempts"] += 1
-        _save_register_status()
+        if not broadcast:
+            _save_register_status()
+        return True
+    return False
 
 
 # === DuckMail 邮箱服务 API ===
@@ -621,3 +726,57 @@ async def test_duckmail_connection(
     except Exception as e:
         logger.error(f"测试连接失败: {e}")
         raise HTTPException(status_code=500, detail={"error": f"测试失败: {e}"})
+
+
+# === WebSocket 端点 ===
+
+@router.websocket("/ws/register")
+async def websocket_register_updates(websocket: WebSocket):
+    """注册机状态和日志实时推送 WebSocket"""
+    # 导入 _sessions 用于验证（延迟导入避免循环）
+    from app.api.admin.manage import _sessions
+
+    # 验证会话
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=1008, reason="Missing token")
+        return
+
+    # 验证 token 有效性
+    if token not in _sessions:
+        await websocket.close(code=1008, reason="Invalid token")
+        return
+
+    # 连接管理
+    await ws_manager.connect(websocket)
+    try:
+        # 立即发送当前状态
+        current_status = _load_register_status()
+        keys_data = await _read_generated_keys()
+        await websocket.send_json({
+            "type": "status_update",
+            "data": {
+                **current_status,
+                "keys": keys_data
+            }
+        })
+
+        # 保持连接并接收心跳
+        while True:
+            try:
+                # 接收客户端消息（用于心跳）
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=30)
+                if message == "ping":
+                    await websocket.send_text("pong")
+            except asyncio.TimeoutError:
+                # 超时则发送心跳
+                await websocket.send_text("ping")
+            except WebSocketDisconnect:
+                break
+
+    except WebSocketDisconnect:
+        logger.info("[WebSocket] 客户端主动断开连接")
+    except Exception as e:
+        logger.error(f"[WebSocket] 错误: {e}")
+    finally:
+        ws_manager.disconnect(websocket)
