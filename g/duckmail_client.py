@@ -219,6 +219,36 @@ class DuckMailClient:
             self._log("error", f"[{self.email}] 获取邮件异常: {e}")
             return []
 
+    def get_message_detail(self, message_id: str) -> dict:
+        """
+        获取单个邮件详情
+
+        Args:
+            message_id: 邮件ID
+
+        Returns:
+            邮件详情字典，失败返回空字典
+        """
+        if not self.token:
+            if not self.login():
+                return {}
+
+        try:
+            res = self._request(
+                "GET",
+                f"/messages/{message_id}",
+                headers={"Authorization": f"Bearer {self.token}"}
+            )
+
+            if res.status_code == 200:
+                return res.json() if res.content else {}
+            else:
+                self._log("error", f"[{self.email}] 获取邮件详情失败: HTTP {res.status_code}")
+                return {}
+        except Exception as e:
+            self._log("error", f"[{self.email}] 获取邮件详情异常: {e}")
+            return {}
+
     def get_verification_code(self, timeout: int = 120, interval: int = 5) -> Optional[str]:
         """
         轮询获取验证码
@@ -245,7 +275,24 @@ class DuckMailClient:
 
             for idx, msg in enumerate(messages, 1):
                 subject = msg.get("subject", "")
+
+                # 打印完整的邮件结构（第一次）
+                if idx == 1 and attempt == 1:
+                    import json
+                    self._log("info", f"[{self.email}] 邮件完整结构: {json.dumps(msg, indent=2, ensure_ascii=False)[:500]}")
+
+                # 先尝试从列表中获取内容
                 content = msg.get("text", "") or msg.get("html", "")
+
+                # 如果列表中没有内容，尝试获取详情
+                if not content:
+                    message_id = msg.get("id", "")
+                    if message_id:
+                        detail = self.get_message_detail(message_id)
+                        if detail:
+                            content = detail.get("text", "") or detail.get("html", "")
+                            if content:
+                                self._log("info", f"[{self.email}] 从详情获取到内容，长度={len(content)}")
 
                 # 记录邮件信息
                 self._log("info", f"[{self.email}] 邮件 {idx}: 主题='{subject}', 内容长度={len(content)}")

@@ -1,0 +1,10 @@
+{
+  "running": true,
+  "pid": 22144,
+  "start_time": "2026-02-01T17:41:21.679026",
+  "stats": {
+    "success_count": 0,
+    "total_attempts": 0,
+    "last_register_time": null
+  }
+}

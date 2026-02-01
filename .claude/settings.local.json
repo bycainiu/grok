@@ -10,7 +10,16 @@
       "Bash(git commit:*)",
       "Bash(git branch:*)",
       "Bash(git push:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(pip install:*)",
+      "Bash(cmd /c \"cd /d D:\\\\projects\\\\grok && if not exist .env.register copy .env.register.example .env.register\")",
+      "Bash(cmd:*)",
+      "Bash(cd:*)",
+      "Bash(python:*)",
+      "Bash(curl:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)"
     ]
   }
 }
