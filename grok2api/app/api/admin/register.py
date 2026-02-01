@@ -130,6 +130,8 @@ class RegisterConfigRequest(BaseModel):
     email_domain: str = ""
     # 注册参数
     concurrent_threads: int = 3
+    # Turnstile Solver 配置
+    turnstile_solver_url: str = "http://127.0.0.1:5072"
     yescaptcha_key: Optional[str] = None
 
 
@@ -392,7 +394,7 @@ async def start_register(request: RegisterStartRequest, _: bool = Depends(verify
 
         # 准备环境变量
         env = os.environ.copy()
-        env["TURNSTILE_SOLVER_URL"] = "http://turnstile-solver:5072"
+        env["TURNSTILE_SOLVER_URL"] = request.config.turnstile_solver_url
         env["DUCKMAIL_BASE_URL"] = request.config.duckmail_base_url
         env["DUCKMAIL_API_KEY"] = request.config.duckmail_api_key
         env["EMAIL_DOMAIN"] = request.config.email_domain

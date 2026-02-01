@@ -19,7 +19,8 @@
       "Bash(curl:*)",
       "Bash(tasklist:*)",
       "Bash(findstr:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(git restore:*)"
     ]
   }
 }

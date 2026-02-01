@@ -1391,9 +1391,14 @@
               <p class="cfg-desc">建议: 1-3（DuckMail 免费版限制请求频率）</p>
             </div>
             <div>
+              <label class="cfg-label">Turnstile Solver URL</label>
+              <input id="regTurnstileSolverUrl" type="text" class="cfg-input" value="http://127.0.0.1:5072" placeholder="http://127.0.0.1:5072">
+              <p class="cfg-desc">本地: http://127.0.0.1:5072，Docker: http://turnstile-solver:5072</p>
+            </div>
+            <div class="md:col-span-2">
               <label class="cfg-label">YesCaptcha Key (可选)</label>
               <input id="regYesCaptcha" type="text" class="cfg-input" placeholder="留空使用本地 Turnstile Solver">
-              <p class="cfg-desc">使用第三方 CAPTCHA 服务</p>
+              <p class="cfg-desc">使用第三方 CAPTCHA 服务（填写后将忽略上面的 Solver URL）</p>
             </div>
           </div>
         </div>
@@ -2220,6 +2225,7 @@
           $('regDuckmailBaseUrl').value = config.duckmail_base_url || 'https://api.duckmail.sbs';
           $('regDuckmailApiKey').value = config.duckmail_api_key || '';
           $('regThreads').value = config.concurrent_threads || 3;
+          $('regTurnstileSolverUrl').value = config.turnstile_solver_url || 'http://127.0.0.1:5072';
           $('regYesCaptcha').value = config.yescaptcha_key || '';
           // 保存当前配置以便后续使用
           registerConfig = {
@@ -2227,6 +2233,7 @@
             duckmail_api_key: config.duckmail_api_key || '',
             email_domain: config.email_domain || '',
             concurrent_threads: config.concurrent_threads || 3,
+            turnstile_solver_url: config.turnstile_solver_url || 'http://127.0.0.1:5072',
             yescaptcha_key: config.yescaptcha_key || ''
           };
         }
@@ -2321,6 +2328,7 @@
       const duckmail_api_key = $('regDuckmailApiKey').value.trim();
       const email_domain = $('regEmailDomain').value.trim();
       const concurrent_threads = parseInt($('regThreads').value) || 3;
+      const turnstile_solver_url = $('regTurnstileSolverUrl').value.trim() || 'http://127.0.0.1:5072';
       const yescaptcha_key = $('regYesCaptcha').value.trim();
 
       if (!duckmail_base_url) {
@@ -2337,6 +2345,7 @@
         duckmail_api_key,
         email_domain,
         concurrent_threads,
+        turnstile_solver_url,
         yescaptcha_key
       };
 
