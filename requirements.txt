@@ -1,0 +1,28 @@
+# Grok 整合项目 - Python 依赖
+# 本地开发环境使用
+
+# FastAPI 和服务器
+fastapi==0.119.0
+uvicorn==0.37.0
+python-dotenv==1.1.1
+pydantic==2.12.2
+
+# HTTP 请求
+curl_cffi==0.13.0
+requests==2.32.5
+aiohttp==3.13.2
+
+# HTML 解析
+beautifulsoup4==4.12.3
+lxml==5.3.0
+
+# 系统工具
+psutil==6.1.0
+
+# 数据库（可选）
+aiomysql==0.2.0
+redis==6.4.0
+
+# 其他工具
+toml==0.10.2
+aiofiles==25.1.0
