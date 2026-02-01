@@ -150,35 +150,43 @@ def register_single_thread():
                 if not send_email_code_grpc(session, email):
                     print(f"[-] {email} 发送验证码失败")
                     time.sleep(5); continue
-                
+
                 # Step 2: 获取验证码
+                print(f"[*] {email} 等待验证码...")
                 verify_code = None
-                for _ in range(30):
-                    time.sleep(1)
+                for attempt in range(30):
+                    if attempt % 5 == 0:  # 每 5 秒打印一次
+                        print(f"[debug] {email} 轮询验证码 {attempt+1}/30...")
                     content = email_service.fetch_first_email(jwt)
                     if content:
                         match = re.search(r">([A-Z0-9]{3}-[A-Z0-9]{3})<", content)
                         if match:
                             verify_code = match.group(1).replace("-", "")
+                            print(f"[+] {email} 收到验证码: {verify_code}")
                             break
+                    time.sleep(1)
                 if not verify_code:
-                    print(f"[-] {email} 未收到验证码")
+                    print(f"[-] {email} 未收到验证码（等待30秒后超时）")
                     continue
 
                 # Step 3: 验证验证码
+                print(f"[*] {email} 验证验证码...")
                 if not verify_email_code_grpc(session, email, verify_code):
                     print(f"[-] {email} 验证码无效")
                     continue
-                
+                print(f"[+] {email} 验证码验证成功")
+
                 # Step 4: 注册重试循环
                 for attempt in range(3):
+                    print(f"[debug] {email} CAPTCHA 求解尝试 {attempt+1}/3...")
                     task_id = turnstile_service.create_task(site_url, config["site_key"])
-                    # 这里不再打印获取 Token 的过程，只在失败时报错
+                    print(f"[debug] {email} CAPTCHA 任务ID: {task_id}")
                     token = turnstile_service.get_response(task_id)
-                    
+
                     if not token or token == "CAPTCHA_FAIL":
                         print(f"[-] {email} CAPTCHA 失败，重试...")
                         continue
+                    print(f"[+] {email} CAPTCHA 求解成功")
 
                     headers = {
                         "user-agent": user_agent, "accept": "text/x-component", "content-type": "text/plain;charset=UTF-8",
@@ -193,14 +201,18 @@ def register_single_thread():
                         },
                         "turnstileToken": token, "promptOnDuplicateEmail": True
                     }]
-                    
+
+                    print(f"[debug] {email} 提交注册请求...")
                     with post_lock:
                         res = session.post(f"{site_url}/sign-up", json=payload, headers=headers)
-                    
+                    print(f"[debug] {email} 提交响应状态码: {res.status_code}")
+
                     if res.status_code == 200:
+                        print(f"[+] {email} 注册请求成功，获取 SSO Token...")
                         match = re.search(r'(https://[^" \s]+set-cookie\?q=[^:" \s]+)1:', res.text)
                         if match:
                             verify_url = match.group(1)
+                            print(f"[debug] {email} 验证 URL: {verify_url}")
                             session.get(verify_url, allow_redirects=True)
                             sso = session.cookies.get("sso")
                             if sso:
@@ -212,8 +224,13 @@ def register_single_thread():
                                     avg = (time.time() - start_time) / success_count
                                     print(f"[✓] 注册成功: {email} | SSO: {sso[:15]}... | 平均: {avg:.1f}s")
                                 break  # 跳出 for 循环，继续 while True 注册下一个
-                    
-                    print(f"[-] {email} 提交失败 ({res.status_code})")
+                            else:
+                                print(f"[-] {email} 未获取到 SSO Token")
+                        else:
+                            print(f"[-] {email} 未找到验证 URL")
+                    else:
+                        print(f"[-] {email} 提交失败 ({res.status_code})")
+                        print(f"[-] 响应内容: {res.text[:200]}")
                     time.sleep(3) # 失败稍微等一下
                 else:
                     # 如果重试 3 次都失败 (for 循环没有被 break)

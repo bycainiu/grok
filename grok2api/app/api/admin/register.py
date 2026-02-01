@@ -42,6 +42,7 @@ REGISTER_PROCESS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # 注册机进程状态
 _register_process: Optional[subprocess.Popen] = None
+_register_monitor_task: Optional[asyncio.Task] = None
 _register_status = {
     "running": False,
     "pid": None,
@@ -362,8 +363,10 @@ async def start_register(request: RegisterStartRequest, _: bool = Depends(verify
         }
         _save_register_status()
 
-        # 启动日志读取任务
-        asyncio.create_task(_monitor_register_process(process, log_file))
+        # 启动日志读取任务（保存到全局变量）
+        global _register_monitor_task
+        _register_monitor_task = asyncio.create_task(_monitor_register_process(process, log_file))
+        logger.info(f"日志监控任务已创建: {_register_monitor_task}")
 
         logger.info(f"注册机已启动 (PID: {process.pid})")
         return {
@@ -512,13 +515,16 @@ async def _monitor_register_process(process: subprocess.Popen, log_file: Path):
     """监控注册机进程并记录日志"""
     try:
         logger.info(f"开始监控注册机进程 (PID: {process.pid}), 日志文件: {log_file}")
+        line_count = 0
         with open(log_file, 'a', encoding='utf-8') as f:
-            line_count = 0
             for line in process.stdout:
                 line = line.strip()
                 if line:
+                    # 写入文件并立即 flush
                     f.write(f"{line}\n")
                     f.flush()
+                    # 同时输出到 logger（便于调试）
+                    logger.info(f"[注册机] {line}")
                     line_count += 1
                     # 每写入 10 行日志记录一次
                     if line_count % 10 == 0:
@@ -538,6 +544,8 @@ async def _monitor_register_process(process: subprocess.Popen, log_file: Path):
 
     except Exception as e:
         logger.error(f"监控注册机进程失败: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 
 def _parse_register_log(line: str):

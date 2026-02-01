@@ -23,10 +23,16 @@ class DuckMailEmailService:
         if not self.email_domain:
             raise ValueError("Missing required environment variable: EMAIL_DOMAIN")
 
-        # 初始化 DuckMail 客户端
+        # 定义日志回调函数
+        def log_callback(level, message):
+            """打印 DuckMail 客户端的日志"""
+            print(f"[{level.upper()}] {message}")
+
+        # 初始化 DuckMail 客户端，传入日志回调
         self.client = DuckMailClient(
             base_url=self.base_url,
-            api_key=self.api_key
+            api_key=self.api_key,
+            log_callback=log_callback
         )
 
         # 当前线程使用的邮箱和 token
