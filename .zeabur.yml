@@ -1,15 +1,17 @@
+# Zeabur 部署配置
+# 文档: https://zeabur.com/docs/deploy/dockerfile
+
 services:
   # Grok2API 主服务
-  grok2api:
-    type: docker
-    dockerfile: ./grok2api/Dockerfile
-    context: ./grok2api
+  - name: grok2api
+    docker:
+      # 使用根目录的 Dockerfile
+      path: .
     ports:
       - 80:8000
     env:
       - STORAGE_MODE=file
       - WORKERS=1
-      - TURNSTILE_SOLVER_URL=http://turnstile-solver:5072
       - PORT=8000
     volumes:
       - data:/app/data
