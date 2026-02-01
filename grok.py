@@ -2,7 +2,37 @@ import os, json, random, string, time, re, struct
 import threading
 import concurrent.futures
 from urllib.parse import urljoin, urlparse
-from curl_cffi import requests
+
+# 尝试导入 curl_cffi，如果失败则使用标准 requests
+try:
+    from curl_cffi import requests
+    USE_CURL_CFFI = True
+    print(f"[+] 使用 curl_cffi 进行请求")
+except ImportError:
+    import requests as _requests
+    # 创建一个兼容的接口
+    class RequestsWrapper:
+        """包装标准 requests 库以兼容 curl_cffi 接口"""
+        @staticmethod
+        def Session(*args, **kwargs):
+            impersonate = kwargs.pop('impersonate', None)
+            class Session:
+                def __init__(self):
+                    self.session = _requests.Session()
+                def get(self, *args, **kwargs):
+                    return self.session.get(*args, **kwargs)
+                def post(self, *args, **kwargs):
+                    return self.session.post(*args, **kwargs)
+                def __enter__(self):
+                    return self
+                def __exit__(self, *args):
+                    self.session.close()
+            return Session()
+
+    requests = RequestsWrapper()
+    USE_CURL_CFFI = False
+    print(f"[-] curl_cffi 未安装，使用标准 requests 库")
+
 from bs4 import BeautifulSoup
 
 from g import DuckMailEmailService, TurnstileService
@@ -52,9 +82,9 @@ def send_email_code_grpc(session, email):
     data = encode_grpc_message(1, email)
     headers = {"content-type": "application/grpc-web+proto", "x-grpc-web": "1", "x-user-agent": "connect-es/2.1.1", "origin": site_url, "referer": f"{site_url}/sign-up?redirect=grok-com"}
     try:
-        # print(f"[debug] {email} 正在发送验证码请求...")
-        res = session.post(url, data=data, headers=headers, timeout=15)
-        # print(f"[debug] {email} 请求结束，状态码: {res.status_code}")
+        print(f"[debug] {email} 正在发送验证码请求...")
+        res = session.post(url, data=data, headers=headers, timeout=30)
+        print(f"[debug] {email} 请求结束，状态码: {res.status_code}")
         return res.status_code == 200
     except Exception as e:
         print(f"[-] {email} 发送验证码异常: {e}")
@@ -94,11 +124,15 @@ def register_single_thread():
         try:
             with requests.Session(impersonate="chrome120", proxies=PROXIES) as session:
                 # 预热连接
-                try: session.get(site_url, timeout=10)
-                except: pass
+                try:
+                    print(f"[debug] {threading.get_ident()} 预热连接...")
+                    session.get(site_url, timeout=10)
+                    print(f"[debug] {threading.get_ident()} 预热完成")
+                except Exception as e:
+                    print(f"[-] {threading.get_ident()} 预热失败: {e}")
 
                 password = generate_random_string()
-                
+
                 # print(f"[debug] 线程-{threading.get_ident()} 正在请求创建邮箱...")
                 try:
                     jwt, email = email_service.create_email()
@@ -109,7 +143,7 @@ def register_single_thread():
                 if not email:
                     print(f"[-] 线程-{threading.get_ident()} 邮箱创建返回空，可能接口挂了或超时，等待 5s...")
                     time.sleep(5); continue
-                
+
                 print(f"[*] 开始注册: {email}")
 
                 # Step 1: 发送验证码
@@ -188,7 +222,9 @@ def register_single_thread():
 
         except Exception as e:
             # 捕获所有异常防止线程退出
-            print(f"[-] 异常: {str(e)[:50]}")
+            import traceback
+            print(f"[-] 异常: {str(e)}")
+            print(f"[-] 异常堆栈:\n{traceback.format_exc()}")
             time.sleep(5)
 
 def main():
