@@ -28,9 +28,9 @@ echo   启动完成！
 echo ============================================
 echo.
 echo 服务地址：
-echo   - Turnstile Solver: http://localhost:5072
-echo   - Grok2API:         http://localhost:8000
-echo   - 管理后台:         http://localhost:8000/login
+echo   - Grok2API:         http://localhost
+echo   - 管理后台:         http://localhost/login
+echo   - Turnstile Solver: http://localhost:5072（内部服务）
 echo.
 echo 在管理后台的 [注册机管理] 标签页中：
 echo   1. 配置邮箱服务（Worker 域名、邮箱域名、管理员密码）

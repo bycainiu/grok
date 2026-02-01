@@ -1,0 +1,39 @@
+# Zeabur 部署配置
+
+services:
+  # Turnstile Solver 服务
+  - name: turnstile-solver
+    docker:
+      file: Dockerfile.turnstile-solver
+      context: .
+    ports:
+      - 5072:5072
+    env:
+      - HEADLESS=true
+      - BROWSER_TYPE=chromium
+      - THREAD=4
+      - DEBUG=false
+
+  # Grok2API 服务（主服务）
+  - name: grok2api
+    docker:
+      file: grok2api/Dockerfile
+      context: grok2api
+    ports:
+      - 80:8000  # 对外 80 端口
+    volumes:
+      - data:/app/data
+      - keys:/app/keys
+      - logs:/app/logs
+    env:
+      - STORAGE_MODE=file
+      - WORKERS=1
+      - TURNSTILE_SOLVER_URL=http://turnstile-solver:5072
+      - PORT=8000
+    depends_on:
+      - turnstile-solver
+
+volumes:
+  data: {}
+  keys: {}
+  logs: {}

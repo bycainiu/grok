@@ -47,13 +47,15 @@ services:
     container_name: grok2api
     restart: always
     ports:
-      - "8000:8000"
+      - "80:8000"  # 映射到 80 端口，便于 Zeabur 部署
     environment:
       - TZ=Asia/Shanghai
       - STORAGE_MODE=file
       - WORKERS=1
       # Turnstile Solver URL（Docker 网络内地址）
       - TURNSTILE_SOLVER_URL=http://turnstile-solver:5072
+      # 端口配置
+      - PORT=8000
     volumes:
       - grok_data:/app/data
       - ./logs/grok2api:/app/logs

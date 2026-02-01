@@ -20,15 +20,15 @@ chmod +x start.sh
 ```
 
 启动后访问：
-- **Grok2API**: http://localhost:8000
-- **管理后台**: http://localhost:8000/login
-- **Turnstile Solver**: http://localhost:5072
+- **Grok2API**: http://localhost
+- **管理后台**: http://localhost/login
+- **Turnstile Solver**: http://localhost:5072（内部服务）
 
 ## 📋 使用注册机
 
 ### 1. 登录管理后台
 
-访问 http://localhost:8000/login，使用默认账号登录：
+访问 http://localhost/login，使用默认账号登录：
 - 用户名: `admin`
 - 密码: `admin`
 
@@ -186,7 +186,7 @@ docker-compose logs grok2api
 
 - [Grok2API 原项目](https://github.com/Tomiya233/grok2api)
 - Turnstile Solver API: http://localhost:5072
-- Grok2API 管理后台: http://localhost:8000/login
+- Grok2API 管理后台: http://localhost/login
 
 ## 📄 许可证
 
