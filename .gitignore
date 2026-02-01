@@ -23,6 +23,7 @@ keys/
 *.db
 *.sqlite
 grok2api/data/
+data/
 
 # IDE
 .vscode/
