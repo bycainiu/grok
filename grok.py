@@ -5,7 +5,7 @@ from urllib.parse import urljoin, urlparse
 from curl_cffi import requests
 from bs4 import BeautifulSoup
 
-from g import EmailService, TurnstileService
+from g import DuckMailEmailService, TurnstileService
 
 # 基础配置
 site_url = "https://accounts.x.ai"
@@ -76,9 +76,9 @@ def verify_email_code_grpc(session, email, code):
 def register_single_thread():
     # 错峰启动，防止瞬时并发过高
     time.sleep(random.uniform(0, 5))
-    
+
     try:
-        email_service = EmailService()
+        email_service = DuckMailEmailService()
         turnstile_service = TurnstileService()
     except Exception as e:
         print(f"[-] 服务初始化失败: {e}")
