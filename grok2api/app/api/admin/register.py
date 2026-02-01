@@ -93,6 +93,42 @@ def _get_project_root():
     # 本地开发环境
     return Path(__file__).parents[4]
 
+
+def _is_docker_environment() -> bool:
+    """检测是否在 Docker 环境中运行"""
+    # 方法1: 检查 /.dockerenv 文件
+    if Path("/.dockerenv").exists():
+        return True
+    # 方法2: 检查 /proc/1/cgroup（Linux）
+    try:
+        with open("/proc/1/cgroup", "r") as f:
+            return "docker" in f.read() or "kubepods" in f.read()
+    except:
+        pass
+    # 方法3: 检查 grok.py 路径
+    if Path("/app/grok.py").exists():
+        return True
+    return False
+
+
+def _adjust_solver_url(solver_url: str) -> str:
+    """
+    根据运行环境自动调整 Turnstile Solver URL
+
+    Args:
+        solver_url: 用户配置的 Solver URL
+
+    Returns:
+        调整后的 URL（Docker 环境自动使用服务名）
+    """
+    # 如果配置的是本地地址，但实际在 Docker 中运行，则自动调整
+    if _is_docker_environment():
+        if "127.0.0.1" in solver_url or "localhost" in solver_url:
+            logger.info(f"[环境检测] 检测到 Docker 环境，自动将 Solver URL 从 {solver_url} 调整为 http://turnstile-solver:5072")
+            return "http://turnstile-solver:5072"
+    return solver_url
+
+
 PROJECT_ROOT = _get_project_root()
 KEYS_DIR = PROJECT_ROOT / "keys"
 REGISTER_LOG_DIR = PROJECT_ROOT / "logs" / "register"
@@ -317,6 +353,13 @@ async def get_register_config(_: bool = Depends(verify_admin_session)) -> Dict[s
     """获取注册机配置"""
     try:
         config = _load_config()
+
+        # 根据环境设置默认的 Solver URL
+        if _is_docker_environment():
+            default_solver_url = "http://turnstile-solver:5072"
+        else:
+            default_solver_url = "http://127.0.0.1:5072"
+
         if not config:
             return {
                 "success": True,
@@ -325,6 +368,7 @@ async def get_register_config(_: bool = Depends(verify_admin_session)) -> Dict[s
                     "duckmail_api_key": "",
                     "email_domain": "",
                     "concurrent_threads": 3,
+                    "turnstile_solver_url": default_solver_url,
                     "yescaptcha_key": ""
                 }
             }
@@ -336,6 +380,7 @@ async def get_register_config(_: bool = Depends(verify_admin_session)) -> Dict[s
                 "duckmail_api_key": config.get("DUCKMAIL_API_KEY", ""),
                 "email_domain": config.get("EMAIL_DOMAIN", ""),
                 "concurrent_threads": int(config.get("CONCURRENT_THREADS", "3")),
+                "turnstile_solver_url": config.get("TURNSTILE_SOLVER_URL", default_solver_url),
                 "yescaptcha_key": config.get("YESCAPTCHA_KEY", "")
             }
         }
@@ -394,13 +439,17 @@ async def start_register(request: RegisterStartRequest, _: bool = Depends(verify
 
         # 准备环境变量
         env = os.environ.copy()
-        env["TURNSTILE_SOLVER_URL"] = request.config.turnstile_solver_url
+        # 自动调整 Turnstile Solver URL（Docker 环境自动使用服务名）
+        adjusted_solver_url = _adjust_solver_url(request.config.turnstile_solver_url)
+        env["TURNSTILE_SOLVER_URL"] = adjusted_solver_url
         env["DUCKMAIL_BASE_URL"] = request.config.duckmail_base_url
         env["DUCKMAIL_API_KEY"] = request.config.duckmail_api_key
         env["EMAIL_DOMAIN"] = request.config.email_domain
         env["CONCURRENT_THREADS"] = str(request.config.concurrent_threads)
         if request.config.yescaptcha_key:
             env["YESCAPTCHA_KEY"] = request.config.yescaptcha_key
+
+        logger.info(f"[环境检测] 最终使用的 Solver URL: {adjusted_solver_url}")
 
         # 准备日志文件
         log_file = REGISTER_LOG_DIR / "register.log"
