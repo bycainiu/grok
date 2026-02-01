@@ -1,0 +1,58 @@
+# Docker 忽略文件
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# 环境变量
+.env
+.env.register
+.env.local
+
+# 日志
+logs/
+*.log
+
+# 数据文件
+keys/
+*.db
+*.sqlite
+# 保留 grok.py 和 g/ 目录（挂载到容器）
+!grok.py
+!g/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# 文档
+README.md
+*.md
+docs/
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# 测试
+test/
+*.test.py
+
+# 其他
+.DS_Store
+Thumbs.db

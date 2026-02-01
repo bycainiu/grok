@@ -1,0 +1,87 @@
+# Grok 整合项目 - Docker Compose 配置
+# 一键部署所有服务
+
+services:
+  # ============================================
+  # Turnstile CAPTCHA 求解器服务
+  # ============================================
+  turnstile-solver:
+    build:
+      context: .
+      dockerfile: Dockerfile.turnstile-solver
+    image: turnstile-solver:latest
+    container_name: turnstile-solver
+    restart: unless-stopped
+    ports:
+      - "5072:5072"
+    environment:
+      - TZ=Asia/Shanghai
+      - HEADLESS=true
+      - BROWSER_TYPE=chromium
+      - THREAD=4
+      - DEBUG=false
+    volumes:
+      - ./logs/turnstile:/app/logs
+    networks:
+      - grok-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5072/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================
+  # Grok2API 服务（集成注册机管理）
+  # ============================================
+  grok2api:
+    build:
+      context: ./grok2api
+      dockerfile: Dockerfile
+    image: grok2api:latest
+    container_name: grok2api
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - TZ=Asia/Shanghai
+      - STORAGE_MODE=file
+      - WORKERS=1
+      # Turnstile Solver URL（Docker 网络内地址）
+      - TURNSTILE_SOLVER_URL=http://turnstile-solver:5072
+    volumes:
+      - grok_data:/app/data
+      - ./logs/grok2api:/app/logs
+      # 共享 keys 目录（可写，注册机生成的账号）
+      - ./keys:/app/keys
+      # 挂载注册机脚本（只读）
+      - ./grok.py:/app/grok.py:ro
+      - ./g:/app/g:ro
+      # 挂载注册机日志目录（可写）
+      - ./logs/register:/app/logs/register
+      # 挂载 .env.register 配置文件（可写）
+      - ./.env.register:/app/.env.register
+    networks:
+      - grok-network
+    depends_on:
+      turnstile-solver:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  grok-network:
+    driver: bridge
+    name: grok-network
+
+volumes:
+  grok_data:
+    name: grok_data

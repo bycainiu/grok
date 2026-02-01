@@ -1,0 +1,6 @@
+# Turnstile Solver 依赖
+quart==0.19.4
+patchright==1.51.0
+camoufox==0.4.12
+rich==13.7.0
+aiofiles==23.2.1

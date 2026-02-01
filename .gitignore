@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# 环境变量
+.env
+.env.local
+.env.register
+
+# 日志
+logs/
+*.log
+
+# 数据文件
+keys/
+*.db
+*.sqlite
+grok2api/data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# Docker
+*.tar
+*.tar.gz
+
+# 测试
+test/
+*.test.py
