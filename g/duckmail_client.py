@@ -200,7 +200,7 @@ class DuckMailClient:
                 return []
 
         try:
-            self._log("info", "正在获取邮件列表...")
+            self._log("info", f"[{self.email}] 正在获取邮件列表...")
             res = self._request(
                 "GET",
                 "/messages",
@@ -210,13 +210,13 @@ class DuckMailClient:
             if res.status_code == 200:
                 data = res.json() if res.content else {}
                 messages = data.get("hydra:member", [])
-                self._log("info", f"收到 {len(messages)} 封邮件")
+                self._log("info", f"[{self.email}] 收到 {len(messages)} 封邮件")
                 return messages[:limit]
             else:
-                self._log("error", f"获取邮件失败: HTTP {res.status_code}")
+                self._log("error", f"[{self.email}] 获取邮件失败: HTTP {res.status_code}")
                 return []
         except Exception as e:
-            self._log("error", f"获取邮件异常: {e}")
+            self._log("error", f"[{self.email}] 获取邮件异常: {e}")
             return []
 
     def get_verification_code(self, timeout: int = 120, interval: int = 5) -> Optional[str]:
@@ -235,30 +235,40 @@ class DuckMailClient:
         start_time = time.time()
         max_retries = timeout // interval
 
-        self._log("info", f"开始轮询验证码 (超时 {timeout}秒)")
+        self._log("info", f"[{self.email}] 开始轮询验证码 (超时 {timeout}秒)")
 
         for attempt in range(1, max_retries + 1):
             elapsed = int(time.time() - start_time)
-            self._log("info", f"[{elapsed}s] 第 {attempt}/{max_retries} 次检查...")
+            self._log("info", f"[{self.email}] [{elapsed}s] 第 {attempt}/{max_retries} 次检查...")
 
             messages = self.get_messages(limit=5)
 
-            for msg in messages:
+            for idx, msg in enumerate(messages, 1):
                 subject = msg.get("subject", "")
                 content = msg.get("text", "") or msg.get("html", "")
+
+                # 记录邮件信息
+                self._log("info", f"[{self.email}] 邮件 {idx}: 主题='{subject}', 内容长度={len(content)}")
+
+                # 打印邮件内容前 200 字符用于调试
+                if content:
+                    preview = content[:200].replace('\n', ' ')
+                    self._log("info", f"[{self.email}] 内容预览: {preview}...")
 
                 # 查找验证码（6位数字）
                 code_match = re.search(r'\b\d{6}\b', content)
                 if code_match:
                     code = code_match.group()
-                    self._log("info", f"✅ 找到验证码: {code}")
+                    self._log("info", f"[{self.email}] ✅ 找到验证码: {code}")
                     return code
+                else:
+                    self._log("info", f"[{self.email}] 邮件 {idx} 中未找到验证码")
 
             if attempt < max_retries:
-                self._log("info", f"等待 {interval} 秒后重试...")
+                self._log("info", f"[{self.email}] 等待 {interval} 秒后重试...")
                 time.sleep(interval)
 
-        self._log("error", f"获取验证码超时 ({timeout}秒)")
+        self._log("error", f"[{self.email}] 获取验证码超时 ({timeout}秒)")
         return None
 
     def test_connection(self) -> dict:
