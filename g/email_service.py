@@ -13,7 +13,7 @@ import os
 import requests
 import random
 import string
-from dotenv import load_dotenv
+from .env_loader import load_register_env
 
 
 class EmailService:
@@ -21,7 +21,7 @@ class EmailService:
 
     def __init__(self):
         """初始化邮箱服务"""
-        load_dotenv()
+        load_register_env()
 
         self.worker_domain = os.getenv("WORKER_DOMAIN")
         self.email_domain = os.getenv("EMAIL_DOMAIN")

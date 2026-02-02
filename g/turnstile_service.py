@@ -4,9 +4,12 @@ Turnstile验证服务类
 import os
 import time
 import requests
-from dotenv import load_dotenv
+from .env_loader import load_register_env
 
-load_dotenv()
+load_register_env()
+
+DEFAULT_SOLVER_URL = "http://127.0.0.1:5072"
+DEFAULT_TIMEOUT_SECONDS = 20
 
 
 class TurnstileService:
@@ -17,9 +20,12 @@ class TurnstileService:
         初始化Turnstile服务
         """
         self.yescaptcha_key = os.getenv('YESCAPTCHA_KEY', '').strip()
-        # 优先使用环境变量，其次使用传入的 URL，最后使用默认值
-        self.solver_url = solver_url or os.getenv('TURNSTILE_SOLVER_URL', 'http://127.0.0.1:5072')
+        env_solver_url = os.getenv('TURNSTILE_SOLVER_URL', '').strip()
+        resolved_solver_url = (solver_url or env_solver_url or DEFAULT_SOLVER_URL).strip()
+        # 统一移除末尾 /，避免拼接双斜杠
+        self.solver_url = resolved_solver_url.rstrip("/")
         self.yescaptcha_api = "https://api.yescaptcha.com"
+        self.request_timeout = int(os.getenv("TURNSTILE_SOLVER_TIMEOUT", str(DEFAULT_TIMEOUT_SECONDS)))
 
     def create_task(self, siteurl, sitekey):
         """
@@ -36,23 +42,34 @@ class TurnstileService:
                     "websiteKey": sitekey
                 }
             }
-            response = requests.post(url, json=payload)
+            response = requests.post(url, json=payload, timeout=self.request_timeout)
             response.raise_for_status()
             data = response.json()
             if data.get('errorId') != 0:
                 raise Exception(f"YesCaptcha创建任务失败: {data.get('errorDescription')}")
-            return data['taskId']
+            task_id = data.get('taskId')
+            if not task_id:
+                raise Exception("YesCaptcha 返回缺少 taskId")
+            return task_id
         else:
             # 使用本地 Turnstile Solver
             url = f"{self.solver_url}/turnstile?url={siteurl}&sitekey={sitekey}"
-            response = requests.get(url)
+            response = requests.get(url, timeout=self.request_timeout)
             response.raise_for_status()
-            return response.json()['taskId']
+            data = response.json()
+            if data.get('errorId') not in (None, 0):
+                raise Exception(f"Turnstile Solver 创建任务失败: {data.get('errorDescription')}")
+            task_id = data.get('taskId')
+            if not task_id:
+                raise Exception("Turnstile Solver 返回缺少 taskId")
+            return task_id
 
     def get_response(self, task_id, max_retries=30, initial_delay=5, retry_delay=2):
         """
         获取Turnstile验证响应
         """
+        if not task_id:
+            return None
         time.sleep(initial_delay)
 
         for _ in range(max_retries):
@@ -64,7 +81,7 @@ class TurnstileService:
                         "clientKey": self.yescaptcha_key,
                         "taskId": task_id
                     }
-                    response = requests.post(url, json=payload)
+                    response = requests.post(url, json=payload, timeout=self.request_timeout)
                     response.raise_for_status()
                     data = response.json()
 
@@ -87,18 +104,27 @@ class TurnstileService:
                 else:
                     # 使用本地 Turnstile Solver
                     url = f"{self.solver_url}/result?id={task_id}"
-                    response = requests.get(url)
+                    response = requests.get(url, timeout=self.request_timeout)
                     response.raise_for_status()
                     data = response.json()
-                    captcha = data.get('solution', {}).get('token', None)
+                    if data.get('errorId') not in (None, 0):
+                        print(f"Turnstile Solver 获取结果失败: {data.get('errorDescription')}")
+                        return None
 
-                    if captcha:
-                        if captcha != "CAPTCHA_FAIL":
+                    status = data.get('status')
+                    if status == "ready":
+                        captcha = data.get('solution', {}).get('token')
+                        if captcha and captcha != "CAPTCHA_FAIL":
                             return captcha
-                        else:
-                            return None
-                    else:
+                        return None
+                    if status == "processing":
                         time.sleep(retry_delay)
+                        continue
+
+                    captcha = data.get('solution', {}).get('token')
+                    if captcha and captcha != "CAPTCHA_FAIL":
+                        return captcha
+                    time.sleep(retry_delay)
             except Exception as e:
                 print(f"获取Turnstile响应异常: {e}")
                 time.sleep(retry_delay)

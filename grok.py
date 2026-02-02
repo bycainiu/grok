@@ -179,7 +179,14 @@ def register_single_thread():
                 # Step 4: 注册重试循环
                 for attempt in range(3):
                     print(f"[debug] [{email}] CAPTCHA 求解尝试 {attempt+1}/3...")
-                    task_id = turnstile_service.create_task(site_url, config["site_key"])
+                    try:
+                        task_id = turnstile_service.create_task(site_url, config["site_key"])
+                    except Exception as e:
+                        print(f"[-] [{email}] 创建 CAPTCHA 任务失败: {e}")
+                        continue
+                    if not task_id:
+                        print(f"[-] [{email}] CAPTCHA 任务创建失败（空 task_id）")
+                        continue
                     print(f"[debug] [{email}] CAPTCHA 任务ID: {task_id}")
                     token = turnstile_service.get_response(task_id)
 

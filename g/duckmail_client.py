@@ -6,9 +6,9 @@ import string
 import time
 import requests
 from typing import Optional, Callable
-from dotenv import load_dotenv
+from .env_loader import load_register_env
 
-load_dotenv()
+load_register_env()
 
 
 class DuckMailClient:

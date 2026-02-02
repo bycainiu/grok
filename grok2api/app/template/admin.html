@@ -2113,11 +2113,27 @@
     // --- 注册机管理 ---
 
     let registerConfig = {
-      worker_domain: '',
+      duckmail_base_url: 'https://api.duckmail.sbs',
+      duckmail_api_key: '',
       email_domain: '',
-      admin_password: '',
-      concurrent_threads: 8,
+      concurrent_threads: 3,
+      turnstile_solver_url: 'http://127.0.0.1:5072',
       yescaptcha_key: ''
+    };
+    let registerLogMode = 'poll';
+    let registerLogHasContent = false;
+
+    const updateRegisterDuration = (running, startTime) => {
+      if (running && startTime) {
+        const start = new Date(startTime);
+        const now = new Date();
+        const diff = Math.floor((now - start) / 1000);
+        const hours = Math.floor(diff / 3600);
+        const minutes = Math.floor((diff % 3600) / 60);
+        $('regDuration').textContent = `${hours}h ${minutes}m`;
+      } else {
+        $('regDuration').textContent = '-';
+      }
     };
 
     // 加载注册机状态
@@ -2145,16 +2161,7 @@
         $('regTokenCount').textContent = status.keys?.token_count || 0;
 
         // 计算运行时长
-        if (running && status.start_time) {
-          const start = new Date(status.start_time);
-          const now = new Date();
-          const diff = Math.floor((now - start) / 1000);
-          const hours = Math.floor(diff / 3600);
-          const minutes = Math.floor((diff % 3600) / 60);
-          $('regDuration').textContent = `${hours}h ${minutes}m`;
-        } else {
-          $('regDuration').textContent = '-';
-        }
+        updateRegisterDuration(running, status.start_time);
 
         // 更新账号列表
         if (status.keys?.accounts?.length > 0) {
@@ -2168,10 +2175,15 @@
           `).join('');
           $('registerAccounts').innerHTML = accountsHtml;
           $('regAccountCount').textContent = `${status.keys.accounts.length} 个账号`;
+        } else {
+          $('registerAccounts').innerHTML = '<p class="text-gray-500 text-sm">暂无数据</p>';
+          $('regAccountCount').textContent = '0 个账号';
         }
 
-        // 自动刷新日志
-        loadRegisterLogs();
+        // 自动刷新日志（WebSocket 有内容时不覆盖）
+        if (registerLogMode !== 'ws' || !registerLogHasContent) {
+          loadRegisterLogs();
+        }
       } catch (e) {
         console.error('加载注册机状态失败:', e);
       }
@@ -2180,6 +2192,7 @@
     // 加载注册机日志
     const loadRegisterLogs = async () => {
       try {
+        if (registerLogMode === 'ws' && registerLogHasContent) return;
         const r = await apiRequest('/api/register/logs?lines=50');
         if (!r) return;
         const d = await r.json();
@@ -2188,9 +2201,11 @@
         const logs = d.data.logs || [];
         if (logs.length === 0) {
           $('registerLogs').innerHTML = '<p class="text-gray-500">暂无日志</p>';
+          registerLogHasContent = false;
           return;
         }
 
+        registerLogHasContent = true;
         $('registerLogs').innerHTML = logs.map(line => {
           // 简单着色
           let color = 'text-green-400';
@@ -2397,6 +2412,7 @@
           showToast('配置已保存', 'success');
           closeRegisterConfigModal();
           registerConfig = config;
+          detectEnvironment();
         } else {
           showToast('保存失败: ' + (d.error || '未知错误'), 'error');
         }
@@ -2522,7 +2538,7 @@
         loadRegisterStatus();
         // 当注册机运行时，自动刷新日志
         const statusText = $('regRunning').textContent;
-        if (statusText.includes('运行中')) {
+        if (statusText.includes('运行中') && (registerLogMode !== 'ws' || !registerLogHasContent)) {
           loadRegisterLogs();
         }
       }
@@ -2554,6 +2570,7 @@
         registerWebSocket.onopen = () => {
           console.log('[WebSocket] 连接成功');
           wsReconnectAttempts = 0;
+          registerLogMode = 'ws';
           // 连接成功后发送心跳
           if (registerWebSocket.readyState === WebSocket.OPEN) {
             registerWebSocket.send('ping');
@@ -2590,6 +2607,7 @@
         registerWebSocket.onclose = (event) => {
           console.log('[WebSocket] 连接关闭:', event.code, event.reason);
           registerWebSocket = null;
+          registerLogMode = 'poll';
 
           // 尝试重连（仅当面板可见时）
           if (!$('panelRegister').classList.contains('hidden') &&
@@ -2619,13 +2637,19 @@
 
       // 更新统计
       $('regSuccess').textContent = data.stats?.success_count || 0;
-      $('regTokenCount').textContent = data.keys?.token_count || 0;
+      if (data.keys && typeof data.keys.token_count !== 'undefined') {
+        $('regTokenCount').textContent = data.keys.token_count || 0;
+      }
+
+      // 更新运行时长
+      updateRegisterDuration(running, data.start_time);
 
       // 更新账号列表
       if (data.keys && data.keys.accounts) {
         const accounts = data.keys.accounts;
         if (accounts.length === 0) {
           $('registerAccounts').innerHTML = '<p class="text-gray-500 text-sm">暂无数据</p>';
+          $('regAccountCount').textContent = '0 个账号';
         } else {
           const accountsHtml = accounts.map(acc => `
             <div class="flex items-center justify-between p-2 border-b border-border">
@@ -2647,6 +2671,11 @@
 
       const logsDiv = $('registerLogs');
       if (!logsDiv) return;
+
+      if (!registerLogHasContent) {
+        logsDiv.innerHTML = '';
+      }
+      registerLogHasContent = true;
 
       // 追加新日志
       data.logs.forEach(line => {

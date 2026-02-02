@@ -5,7 +5,7 @@ DuckMail 邮箱服务类
 import os
 import re
 import time
-from dotenv import load_dotenv
+from .env_loader import load_register_env
 from .duckmail_client import DuckMailClient
 
 
@@ -14,7 +14,7 @@ class DuckMailEmailService:
 
     def __init__(self):
         """初始化 DuckMail 邮箱服务"""
-        load_dotenv()
+        load_register_env()
 
         self.base_url = os.getenv("DUCKMAIL_BASE_URL", "https://api.duckmail.sbs")
         self.api_key = os.getenv("DUCKMAIL_API_KEY", "")

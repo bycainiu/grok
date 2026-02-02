@@ -111,22 +111,24 @@ def _is_docker_environment() -> bool:
     return False
 
 
-def _adjust_solver_url(solver_url: str) -> str:
-    """
-    根据运行环境自动调整 Turnstile Solver URL
+def _default_solver_url() -> str:
+    """根据环境返回默认 Turnstile Solver URL"""
+    return "http://turnstile-solver:5072" if _is_docker_environment() else "http://127.0.0.1:5072"
 
-    Args:
-        solver_url: 用户配置的 Solver URL
 
-    Returns:
-        调整后的 URL（Docker 环境自动使用服务名）
-    """
-    # 如果配置的是本地地址，但实际在 Docker 中运行，则自动调整
-    if _is_docker_environment():
-        if "127.0.0.1" in solver_url or "localhost" in solver_url:
-            logger.info(f"[环境检测] 检测到 Docker 环境，自动将 Solver URL 从 {solver_url} 调整为 http://turnstile-solver:5072")
-            return "http://turnstile-solver:5072"
-    return solver_url
+def _normalize_solver_url(solver_url: Optional[str]) -> str:
+    """规范化 Turnstile Solver URL 并处理 Docker 兼容性"""
+    candidate = (solver_url or "").strip()
+    if not candidate:
+        env_solver = os.getenv("TURNSTILE_SOLVER_URL", "").strip()
+        candidate = env_solver or _default_solver_url()
+
+    candidate = candidate.rstrip("/")
+
+    if _is_docker_environment() and ("127.0.0.1" in candidate or "localhost" in candidate):
+        logger.info(f"[环境检测] 检测到 Docker 环境，自动将 Solver URL 从 {candidate} 调整为 http://turnstile-solver:5072")
+        return "http://turnstile-solver:5072"
+    return candidate
 
 
 PROJECT_ROOT = _get_project_root()
@@ -147,12 +149,14 @@ _register_status = {
     "running": False,
     "pid": None,
     "start_time": None,
+    "updated_at": 0.0,
     "stats": {
         "success_count": 0,
         "total_attempts": 0,
         "last_register_time": None
     }
 }
+_last_status_save_ts: float = 0.0
 
 
 # === 请求/响应模型 ===
@@ -192,8 +196,13 @@ def _load_register_status() -> Dict[str, Any]:
         if REGISTER_PROCESS_FILE.exists():
             with open(REGISTER_PROCESS_FILE, 'r', encoding='utf-8') as f:
                 saved_status = json.load(f)
-                # 合并保存的状态
-                _register_status.update(saved_status)
+                saved_status = _ensure_register_status_fields(saved_status)
+                saved_ts = saved_status.get("updated_at") or 0.0
+                current_ts = _register_status.get("updated_at") or 0.0
+                # 仅当保存状态更新时才覆盖，避免回退
+                if saved_ts > current_ts or current_ts == 0.0:
+                    _register_status.update(saved_status)
+        _register_status = _ensure_register_status_fields(_register_status)
     except Exception as e:
         logger.warning(f"加载注册机状态失败: {e}")
     return _register_status
@@ -202,10 +211,39 @@ def _load_register_status() -> Dict[str, Any]:
 def _save_register_status():
     """保存注册机状态"""
     try:
+        global _register_status
+        _register_status = _ensure_register_status_fields(_register_status)
         with open(REGISTER_PROCESS_FILE, 'w', encoding='utf-8') as f:
             json.dump(_register_status, f, ensure_ascii=False, indent=2, default=str)
     except Exception as e:
         logger.error(f"保存注册机状态失败: {e}")
+
+
+def _maybe_save_register_status(force: bool = False, min_interval_seconds: float = 1.0) -> None:
+    """按节流间隔保存注册机状态，避免频繁磁盘写入。"""
+    global _last_status_save_ts
+    now = time.time()
+    if force or (now - _last_status_save_ts) >= min_interval_seconds:
+        _save_register_status()
+        _last_status_save_ts = now
+
+
+def _touch_register_status() -> None:
+    """更新注册机状态的更新时间戳"""
+    _register_status["updated_at"] = time.time()
+
+
+def _ensure_register_status_fields(status: Dict[str, Any]) -> Dict[str, Any]:
+    """保证注册机状态字段完整"""
+    status.setdefault("running", False)
+    status.setdefault("pid", None)
+    status.setdefault("start_time", None)
+    status.setdefault("updated_at", 0.0)
+    stats = status.setdefault("stats", {})
+    stats.setdefault("success_count", 0)
+    stats.setdefault("total_attempts", 0)
+    stats.setdefault("last_register_time", None)
+    return status
 
 
 def _load_config() -> Optional[Dict[str, Any]]:
@@ -317,6 +355,7 @@ async def get_register_status(_: bool = Depends(verify_admin_session)) -> Dict[s
                     logger.warning(f"进程 {status['pid']} 不存在，更新状态为停止")
                     status["running"] = False
                     status["pid"] = None
+                    _touch_register_status()
                     _register_status.update(status)
                     _save_register_status()
                 else:
@@ -355,10 +394,7 @@ async def get_register_config(_: bool = Depends(verify_admin_session)) -> Dict[s
         config = _load_config()
 
         # 根据环境设置默认的 Solver URL
-        if _is_docker_environment():
-            default_solver_url = "http://turnstile-solver:5072"
-        else:
-            default_solver_url = "http://127.0.0.1:5072"
+        default_solver_url = _default_solver_url()
 
         if not config:
             return {
@@ -373,6 +409,7 @@ async def get_register_config(_: bool = Depends(verify_admin_session)) -> Dict[s
                 }
             }
 
+        solver_url = _normalize_solver_url(config.get("TURNSTILE_SOLVER_URL"))
         return {
             "success": True,
             "data": {
@@ -380,7 +417,7 @@ async def get_register_config(_: bool = Depends(verify_admin_session)) -> Dict[s
                 "duckmail_api_key": config.get("DUCKMAIL_API_KEY", ""),
                 "email_domain": config.get("EMAIL_DOMAIN", ""),
                 "concurrent_threads": int(config.get("CONCURRENT_THREADS", "3")),
-                "turnstile_solver_url": config.get("TURNSTILE_SOLVER_URL", default_solver_url),
+                "turnstile_solver_url": solver_url or default_solver_url,
                 "yescaptcha_key": config.get("YESCAPTCHA_KEY", "")
             }
         }
@@ -393,11 +430,13 @@ async def get_register_config(_: bool = Depends(verify_admin_session)) -> Dict[s
 async def save_register_config(request: RegisterConfigRequest, _: bool = Depends(verify_admin_session)) -> Dict[str, Any]:
     """保存注册机配置"""
     try:
+        solver_url = _normalize_solver_url(request.turnstile_solver_url)
         config = {
             "DUCKMAIL_BASE_URL": request.duckmail_base_url,
             "DUCKMAIL_API_KEY": request.duckmail_api_key,
             "EMAIL_DOMAIN": request.email_domain,
-            "CONCURRENT_THREADS": str(request.concurrent_threads)
+            "CONCURRENT_THREADS": str(request.concurrent_threads),
+            "TURNSTILE_SOLVER_URL": solver_url
         }
         if request.yescaptcha_key:
             config["YESCAPTCHA_KEY"] = request.yescaptcha_key
@@ -422,11 +461,13 @@ async def start_register(request: RegisterStartRequest, _: bool = Depends(verify
             return {"success": False, "message": "注册机已在运行中"}
 
         # 先保存配置
+        solver_url = _normalize_solver_url(request.config.turnstile_solver_url)
         config = {
             "DUCKMAIL_BASE_URL": request.config.duckmail_base_url,
             "DUCKMAIL_API_KEY": request.config.duckmail_api_key,
             "EMAIL_DOMAIN": request.config.email_domain,
-            "CONCURRENT_THREADS": str(request.config.concurrent_threads)
+            "CONCURRENT_THREADS": str(request.config.concurrent_threads),
+            "TURNSTILE_SOLVER_URL": solver_url
         }
         if request.config.yescaptcha_key:
             config["YESCAPTCHA_KEY"] = request.config.yescaptcha_key
@@ -440,8 +481,7 @@ async def start_register(request: RegisterStartRequest, _: bool = Depends(verify
         # 准备环境变量
         env = os.environ.copy()
         # 自动调整 Turnstile Solver URL（Docker 环境自动使用服务名）
-        adjusted_solver_url = _adjust_solver_url(request.config.turnstile_solver_url)
-        env["TURNSTILE_SOLVER_URL"] = adjusted_solver_url
+        env["TURNSTILE_SOLVER_URL"] = solver_url
         env["DUCKMAIL_BASE_URL"] = request.config.duckmail_base_url
         env["DUCKMAIL_API_KEY"] = request.config.duckmail_api_key
         env["EMAIL_DOMAIN"] = request.config.email_domain
@@ -449,7 +489,7 @@ async def start_register(request: RegisterStartRequest, _: bool = Depends(verify
         if request.config.yescaptcha_key:
             env["YESCAPTCHA_KEY"] = request.config.yescaptcha_key
 
-        logger.info(f"[环境检测] 最终使用的 Solver URL: {adjusted_solver_url}")
+        logger.info(f"[环境检测] 最终使用的 Solver URL: {solver_url}")
 
         # 准备日志文件
         log_file = REGISTER_LOG_DIR / "register.log"
@@ -476,6 +516,7 @@ async def start_register(request: RegisterStartRequest, _: bool = Depends(verify
             "total_attempts": 0,
             "last_register_time": None
         }
+        _touch_register_status()
         _save_register_status()
 
         # 启动日志读取任务（保存到全局变量）
@@ -524,6 +565,7 @@ async def stop_register(_: bool = Depends(verify_admin_session)) -> Dict[str, An
         # 更新状态
         _register_status["running"] = False
         _register_status["pid"] = None
+        _touch_register_status()
         _save_register_status()
 
         logger.info("注册机已停止")
@@ -679,6 +721,7 @@ async def _monitor_register_process(process: subprocess.Popen, log_file: Path):
         # 更新状态并推送
         _register_status["running"] = False
         _register_status["pid"] = None
+        _touch_register_status()
         _save_register_status()
 
         # 推送最终状态
@@ -708,13 +751,13 @@ def _parse_register_log(line: str, broadcast: bool = False) -> bool:
         _register_status["stats"]["success_count"] += 1
         _register_status["stats"]["last_register_time"] = datetime.now().isoformat()
         _register_status["stats"]["total_attempts"] += 1
-        if not broadcast:
-            _save_register_status()
+        _touch_register_status()
+        _maybe_save_register_status(force=not broadcast)
         return True
     elif "[-]" in line or "失败" in line:
         _register_status["stats"]["total_attempts"] += 1
-        if not broadcast:
-            _save_register_status()
+        _touch_register_status()
+        _maybe_save_register_status(force=not broadcast)
         return True
     return False
 
