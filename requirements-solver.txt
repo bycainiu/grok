@@ -1,5 +1,6 @@
 # Turnstile Solver 依赖
-quart==0.19.4
+quart>=0.19.5
+flask<3.1.0
 patchright==1.51.0
 camoufox==0.4.11
 rich==13.7.0
