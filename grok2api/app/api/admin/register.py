@@ -728,7 +728,7 @@ async def _monitor_register_process(process: subprocess.Popen, log_file: Path):
                     logger.info(f"已记录 {line_count} 行日志")
 
                 # 解析日志更新统计，并推送状态更新
-                stats_updated = _parse_register_log(line, broadcast=True)
+                stats_updated = await _parse_register_log(line, broadcast=True)
                 if stats_updated and ws_manager.active_connections:
                     # 推送完整状态更新
                     asyncio.create_task(ws_manager.send_status_update(_register_status.copy()))
@@ -757,7 +757,7 @@ async def _monitor_register_process(process: subprocess.Popen, log_file: Path):
         logger.error(traceback.format_exc())
 
 
-def _parse_register_log(line: str, broadcast: bool = False) -> bool:
+async def _parse_register_log(line: str, broadcast: bool = False) -> bool:
     """解析注册机日志更新统计
 
     Args:
@@ -769,8 +769,26 @@ def _parse_register_log(line: str, broadcast: bool = False) -> bool:
     """
     global _register_status
 
-    # 检测成功注册
-    if "[✓]" in line or "注册成功" in line:
+    # 检测成功注册 (仅匹配主成功的消息，避免子步骤重复计数)
+    if "注册成功 | SSO:" in line:
+        try:
+            # 提取 SSO Token
+            sso = line.split("SSO:")[1].strip()
+            # 如果后面还有内容（比如平均时间），提取出 SSO
+            if " " in sso:
+                sso = sso.split(" ")[0]
+            
+            if sso:
+                # 导入到 token_manager
+                from app.services.grok.token import token_manager
+                from app.models.grok_models import TokenType
+                
+                # 异步添加 Token
+                await token_manager.add_token([sso], TokenType.NORMAL)
+                logger.info(f"[注册监测] 已自动同步新 Token: {sso[:15]}...")
+        except Exception as e:
+            logger.error(f"[注册监测] 自动同步 Token 失败: {e}")
+
         _register_status["stats"]["success_count"] += 1
         _register_status["stats"]["last_register_time"] = datetime.now().isoformat()
         _register_status["stats"]["total_attempts"] += 1
@@ -897,3 +915,39 @@ async def websocket_register_updates(websocket: WebSocket):
         logger.error(f"[WebSocket] 错误: {e}")
     finally:
         ws_manager.disconnect(websocket)
+
+
+async def auto_import_generated_tokens():
+    """自动将 keys/grok.txt 中的 Token 导入到系统中（用于启动时同步）"""
+    try:
+        keys_file = KEYS_DIR / "grok.txt"
+        if not keys_file.exists():
+            return
+
+        tokens = []
+        with open(keys_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    tokens.append(line)
+
+        if not tokens:
+            return
+
+        # 导入到 token_manager
+        from app.services.grok.token import token_manager
+        from app.models.grok_models import TokenType
+
+        # 获取当前已有的 tokens 避免重复
+        current_tokens = token_manager.get_tokens()
+        normal_tokens = current_tokens.get(TokenType.NORMAL.value, {})
+        super_tokens = current_tokens.get(TokenType.SUPER.value, {})
+        
+        new_tokens = [t for t in tokens if t not in normal_tokens and t not in super_tokens]
+        
+        if new_tokens:
+            await token_manager.add_token(new_tokens, TokenType.NORMAL)
+            logger.info(f"[启动自检] 自动同步已导入 {len(new_tokens)} 个新生成 Token")
+    except Exception as e:
+        logger.error(f"[启动自检] 自动同步 Token 失败: {e}")
+

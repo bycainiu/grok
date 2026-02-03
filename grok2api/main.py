@@ -88,6 +88,14 @@ async def lifespan(app: FastAPI):
     # 4. 启动批量保存任务
     await token_manager.start_batch_save()
 
+    # 4.5. 启动时自动同步已生成的 Token
+    try:
+        from app.api.admin.register import auto_import_generated_tokens
+        await auto_import_generated_tokens()
+    except Exception as e:
+        logger.warning(f"[启动自检] 自动同步 Token 失败: {e}")
+
+
     # 5. 管理MCP服务的生命周期
     mcp_lifespan_context = mcp_app.lifespan(app)
     await mcp_lifespan_context.__aenter__()

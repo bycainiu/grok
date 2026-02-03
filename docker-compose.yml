@@ -47,7 +47,7 @@ services:
     container_name: grok2api
     restart: always
     ports:
-      - "80:8000"  # 映射到 80 端口，便于 Zeabur 部署
+      - "8000:8000"  # 映射到 80 端口，便于 Zeabur 部署
     environment:
       - TZ=Asia/Shanghai
       - STORAGE_MODE=file

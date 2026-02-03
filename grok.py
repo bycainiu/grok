@@ -1,4 +1,4 @@
-import os, json, random, string, time, re, struct
+import os, json, random, string, time, re, struct, datetime
 import threading
 import concurrent.futures
 from urllib.parse import urljoin, urlparse
@@ -76,6 +76,88 @@ def encode_grpc_message_verify(email, code):
     p2 = struct.pack('B', (2 << 3) | 2) + struct.pack('B', len(code)) + code.encode('utf-8')
     payload = p1 + p2
     return b'\x00' + struct.pack('>I', len(payload)) + payload
+
+def generate_random_birthdate():
+    """生成随机出生日期（20-40岁之间）"""
+    today = datetime.date.today()
+    # 随机年龄 20-40 岁
+    age = random.randint(20, 40)
+    birth_year = today.year - age
+    birth_month = random.randint(1, 12)
+    birth_day = random.randint(1, 28)  # 避免月份天数问题
+    return f"{birth_year}-{birth_month:02d}-{birth_day:02d}T16:00:00.000Z"
+
+def set_birth_date(session, sso_token):
+    """设置出生日期 - REST API"""
+    url = "https://grok.com/rest/auth/set-birth-date"
+    cookie_str = f"sso={sso_token}; sso-rw={sso_token}"
+    headers = {
+        "content-type": "application/json",
+        "origin": "https://grok.com",
+        "referer": "https://grok.com/",
+        "user-agent": user_agent,
+        "cookie": cookie_str
+    }
+    payload = {"birthDate": generate_random_birthdate()}
+    try:
+        res = session.post(url, json=payload, headers=headers, timeout=15)
+        # print(f"[debug] set_birth_date {res.status_code}")
+        return res.status_code == 200
+    except Exception as e:
+        print(f"[!] set_birth_date 异常: {e}")
+        return False
+
+def set_tos_accepted(session, sso_token):
+    """设置 TOS 接受版本 - gRPC API (accounts.x.ai)"""
+    url = "https://accounts.x.ai/auth_mgmt.AuthManagement/SetTosAcceptedVersion"
+    # 编码: field 2 (tos_version) = 1
+    payload = struct.pack('B', (2 << 3) | 0) + struct.pack('B', 1)  # field 2, varint, value=1
+    data = b'\x00' + struct.pack('>I', len(payload)) + payload
+    cookie_str = f"sso={sso_token}; sso-rw={sso_token}"
+    headers = {
+        "content-type": "application/grpc-web+proto",
+        "x-grpc-web": "1",
+        "x-user-agent": "connect-es/2.1.1",
+        "origin": "https://accounts.x.ai",
+        "referer": "https://accounts.x.ai/accept-tos",
+        "user-agent": user_agent,
+        "cookie": cookie_str
+    }
+    try:
+        res = session.post(url, data=data, headers=headers, timeout=15)
+        return res.status_code == 200
+    except Exception as e:
+        print(f"[!] set_tos_accepted 异常: {e}")
+        return False
+
+def encode_grpc_nsfw_settings():
+    field1_content = bytes([0x10, 0x01])
+    field1 = bytes([0x0a, len(field1_content)]) + field1_content
+    nsfw_string = b"always_show_nsfw_content"
+    field2_inner = bytes([0x0a, len(nsfw_string)]) + nsfw_string
+    field2 = bytes([0x12, len(field2_inner)]) + field2_inner
+    payload = field1 + field2
+    return b'\x00' + struct.pack('>I', len(payload)) + payload
+
+def update_nsfw_settings(session, sso_token):
+    """更新 NSFW 设置 - gRPC API"""
+    url = "https://grok.com/auth_mgmt.AuthManagement/UpdateUserFeatureControls"
+    data = encode_grpc_nsfw_settings()
+    cookie_str = f"sso={sso_token}; sso-rw={sso_token}"
+    headers = {
+        "content-type": "application/grpc-web+proto",
+        "x-grpc-web": "1",
+        "origin": "https://grok.com",
+        "referer": "https://grok.com/",
+        "user-agent": user_agent,
+        "cookie": cookie_str
+    }
+    try:
+        res = session.post(url, data=data, headers=headers, timeout=15)
+        return res.status_code == 200
+    except Exception as e:
+        print(f"[!] update_nsfw 异常: {e}")
+        return False
 
 def send_email_code_grpc(session, email):
     url = f"{site_url}/auth_mgmt.AuthManagement/CreateEmailValidationCode"
@@ -229,7 +311,25 @@ def register_single_thread():
                                     global success_count
                                     success_count += 1
                                     avg = (time.time() - start_time) / success_count
-                                    print(f"[✓] [{email}] 注册成功 | SSO: {sso[:15]}... | 平均: {avg:.1f}s")
+                                    print(f"[✓] [{email}] 注册成功 | SSO: {sso}")
+                                
+                                # 注册成功后，执行账号初始化
+                                print(f"[*] [{email}] 正在初始化账号设置...")
+                                try:
+                                    # 1. 接受 TOS
+                                    if set_tos_accepted(session, sso):
+                                        print(f"[✓] [{email}] TOS 接受成功")
+                                    
+                                    # 2. 设置生日
+                                    if set_birth_date(session, sso):
+                                        print(f"[✓] [{email}] 生日设置成功")
+                                        
+                                        # 3. 开启 NSFW (生日设置成功后才能开启)
+                                        if update_nsfw_settings(session, sso):
+                                            print(f"[✓] [{email}] NSFW 开启成功")
+                                except Exception as e:
+                                    print(f"[!] [{email}] 账号初始化异常: {e}")
+                                
                                 break  # 跳出 for 循环，继续 while True 注册下一个
                             else:
                                 print(f"[-] [{email}] 未获取到 SSO Token")
