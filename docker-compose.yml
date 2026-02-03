@@ -17,7 +17,7 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - HEADLESS=true
-      - BROWSER_TYPE=chromium
+      - BROWSER_TYPE=camoufox
       - THREAD=4
       - DEBUG=false
     volumes:

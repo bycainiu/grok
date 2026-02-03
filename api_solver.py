@@ -99,6 +99,20 @@ class TurnstileAPIServer:
         if self.useragent:
             self.browser_args.append(f"--user-agent={self.useragent}")
 
+        self.page_timeout_ms = int(os.getenv("TURNSTILE_SOLVER_PAGE_TIMEOUT_MS", "45000"))
+        self.post_inject_wait = float(os.getenv("TURNSTILE_SOLVER_POST_INJECT_WAIT", "3"))
+        self.max_attempts = int(os.getenv("TURNSTILE_SOLVER_MAX_ATTEMPTS", "40"))
+        self.max_clicks = int(os.getenv("TURNSTILE_SOLVER_MAX_CLICKS", "12"))
+        self.wait_min = float(os.getenv("TURNSTILE_SOLVER_WAIT_MIN", "0.5"))
+        self.wait_max = float(os.getenv("TURNSTILE_SOLVER_WAIT_MAX", "2.5"))
+        self.wait_step = float(os.getenv("TURNSTILE_SOLVER_WAIT_STEP", "0.05"))
+        self.click_every = int(os.getenv("TURNSTILE_SOLVER_CLICK_EVERY", "3"))
+        self.block_resources = os.getenv("TURNSTILE_SOLVER_BLOCK_RESOURCES", "1") not in ("0", "false", "False")
+        self.nav_wait_until = os.getenv("TURNSTILE_SOLVER_NAV_WAIT_UNTIL", "domcontentloaded")
+        self.turnstile_ready_timeout_ms = int(os.getenv("TURNSTILE_SOLVER_READY_TIMEOUT_MS", "10000"))
+        self.viewport_width = int(os.getenv("TURNSTILE_SOLVER_VIEWPORT_WIDTH", "500"))
+        self.viewport_height = int(os.getenv("TURNSTILE_SOLVER_VIEWPORT_HEIGHT", "240"))
+
         self._setup_routes()
 
     def display_welcome(self):
@@ -106,13 +120,13 @@ class TurnstileAPIServer:
         self.console.clear()
         
         combined_text = Text()
-        combined_text.append("\n📢 Channel: ", style="bold white")
+        combined_text.append("\n[Channel] ", style="bold white")
         combined_text.append("https://t.me/D3_vin", style="cyan")
-        combined_text.append("\n💬 Chat: ", style="bold white")
+        combined_text.append("\n[Chat] ", style="bold white")
         combined_text.append("https://t.me/D3vin_chat", style="cyan")
-        combined_text.append("\n📁 GitHub: ", style="bold white")
+        combined_text.append("\n[GitHub] ", style="bold white")
         combined_text.append("https://github.com/D3-vin", style="cyan")
-        combined_text.append("\n📁 Version: ", style="bold white")
+        combined_text.append("\n[Version] ", style="bold white")
         combined_text.append("1.2a", style="green")
         combined_text.append("\n")
 
@@ -493,6 +507,7 @@ class TurnstileAPIServer:
                                 {f'cdata: "{cdata}",' if cdata else ''}
                                 callback: function(token) {{
                                     console.log('Turnstile solved with token:', token);
+                                    window.__turnstileToken = token;
                                     // Create hidden input for token
                                     let tokenInput = document.querySelector('input[name="cf-turnstile-response"]');
                                     if (!tokenInput) {{
@@ -505,6 +520,7 @@ class TurnstileAPIServer:
                                 }},
                                 'error-callback': function(error) {{
                                     console.log('Turnstile error:', error);
+                                    window.__turnstileError = String(error || 'unknown');
                                 }}
                             }});
                         }} catch (e) {{
@@ -531,6 +547,7 @@ class TurnstileAPIServer:
                     {f'cdata: "{cdata}",' if cdata else ''}
                     callback: function(token) {{
                         console.log('Turnstile solved with token:', token);
+                        window.__turnstileToken = token;
                         let tokenInput = document.querySelector('input[name="cf-turnstile-response"]');
                         if (!tokenInput) {{
                             tokenInput = document.createElement('input');
@@ -542,6 +559,7 @@ class TurnstileAPIServer:
                     }},
                     'error-callback': function(error) {{
                         console.log('Turnstile error:', error);
+                        window.__turnstileError = String(error || 'unknown');
                     }}
                 }});
             }} catch (e) {{
@@ -688,7 +706,8 @@ class TurnstileAPIServer:
         
         await self._antishadow_inject(page)
         
-        await self._block_rendering(page)
+        if self.block_resources:
+            await self._block_rendering(page)
         
         await page.add_init_script("""
         Object.defineProperty(navigator, 'webdriver', {
@@ -703,9 +722,9 @@ class TurnstileAPIServer:
         """)
         
         if self.browser_type in ['chromium', 'chrome', 'msedge']:
-            await page.set_viewport_size({"width": 500, "height": 100})
+            await page.set_viewport_size({"width": self.viewport_width, "height": self.viewport_height})
             if self.debug:
-                logger.debug(f"Browser {index}: Set viewport size to 500x240")
+                logger.debug(f"Browser {index}: Set viewport size to {self.viewport_width}x{self.viewport_height}")
 
         start_time = time.time()
 
@@ -717,9 +736,10 @@ class TurnstileAPIServer:
             if self.debug:
                 logger.debug(f"Browser {index}: Loading real website directly: {url}")
 
-            await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            await page.goto(url, wait_until=self.nav_wait_until, timeout=self.page_timeout_ms)
 
-            await self._unblock_rendering(page)
+            if self.block_resources:
+                await self._unblock_rendering(page)
 
             # Сразу инъектируем виджет Turnstile на целевой сайт
             if self.debug:
@@ -728,15 +748,31 @@ class TurnstileAPIServer:
             await self._inject_captcha_directly(page, sitekey, action or '', cdata or '', index)
             
             # Ждем время для загрузки и рендеринга виджета
-            await asyncio.sleep(3)
+            if self.turnstile_ready_timeout_ms > 0:
+                try:
+                    await page.wait_for_function("window.turnstile && window.turnstile.render", timeout=self.turnstile_ready_timeout_ms)
+                except Exception:
+                    if self.debug:
+                        logger.debug(f"Browser {index}: Turnstile API not ready within timeout")
+
+            await asyncio.sleep(self.post_inject_wait)
 
             locator = page.locator('input[name="cf-turnstile-response"]')
-            max_attempts = 30
             click_count = 0
-            max_clicks = 10
 
-            for attempt in range(max_attempts):
+            for attempt in range(self.max_attempts):
                 try:
+                    try:
+                        token = await page.evaluate("window.__turnstileToken || ''")
+                        if token:
+                            elapsed_time = round(time.time() - start_time, 3)
+                            logger.success(f"Browser {index}: Successfully solved captcha - {COLORS.get('MAGENTA')}{token[:10]}{COLORS.get('RESET')} in {COLORS.get('GREEN')}{elapsed_time}{COLORS.get('RESET')} Seconds")
+                            await save_result(task_id, "turnstile", {"value": token, "elapsed_time": elapsed_time})
+                            return
+                    except Exception as e:
+                        if self.debug:
+                            logger.debug(f"Browser {index}: Token check via window failed: {str(e)}")
+
                     # Безопасная проверка количества элементов с токеном
                     try:
                         count = await locator.count()
@@ -778,20 +814,20 @@ class TurnstileAPIServer:
                                     logger.debug(f"Browser {index}: Token element {i} check failed: {str(e)}")
                                 continue
 
-                    if attempt > 2 and attempt % 3 == 0 and click_count < max_clicks:
+                    if attempt > 2 and attempt % self.click_every == 0 and click_count < self.max_clicks:
                         click_success = await self._try_click_strategies(page, index)
                         click_count += 1
                         if click_success and self.debug:
-                            logger.debug(f"Browser {index}: Click successful (click #{click_count}/{max_clicks})")
+                            logger.debug(f"Browser {index}: Click successful (click #{click_count}/{self.max_clicks})")
                         elif not click_success and self.debug:
-                            logger.debug(f"Browser {index}: All click strategies failed on attempt {attempt + 1} (click #{click_count}/{max_clicks})")
+                            logger.debug(f"Browser {index}: All click strategies failed on attempt {attempt + 1} (click #{click_count}/{self.max_clicks})")
 
                     # Адаптивное ожидание
-                    wait_time = min(0.5 + (attempt * 0.05), 2.0)
+                    wait_time = min(self.wait_min + (attempt * self.wait_step), self.wait_max)
                     await asyncio.sleep(wait_time)
 
                     if self.debug and attempt % 5 == 0:
-                        logger.debug(f"Browser {index}: Attempt {attempt + 1}/{max_attempts} - Waiting for token (clicks: {click_count}/{max_clicks})")
+                        logger.debug(f"Browser {index}: Attempt {attempt + 1}/{self.max_attempts} - Waiting for token (clicks: {click_count}/{self.max_clicks})")
 
                 except Exception as e:
                     if self.debug:
@@ -986,7 +1022,7 @@ def parse_args():
     parser.add_argument('--no-headless', action='store_true', help='Run the browser with GUI (disable headless mode). By default, headless mode is enabled.')
     parser.add_argument('--useragent', type=str, help='User-Agent string (if not specified, random configuration is used)')
     parser.add_argument('--debug', action='store_true', help='Enable or disable debug mode for additional logging and troubleshooting information (default: False)')
-    parser.add_argument('--browser_type', type=str, default='chromium', help='Specify the browser type for the solver. Supported options: chromium, chrome, msedge, camoufox (default: chromium)')
+    parser.add_argument('--browser_type', type=str, default='camoufox', help='Specify the browser type for the solver. Supported options: chromium, chrome, msedge, camoufox (default: camoufox)')
     parser.add_argument('--thread', type=int, default=4, help='Set the number of browser threads to use for multi-threaded mode. Increasing this will speed up execution but requires more resources (default: 1)')
     parser.add_argument('--proxy', action='store_true', help='Enable proxy support for the solver (Default: False)')
     parser.add_argument('--random', action='store_true', help='Use random User-Agent and Sec-CH-UA configuration from pool')
@@ -1024,4 +1060,4 @@ if __name__ == '__main__':
             browser_name=args.browser,
             browser_version=args.version
         )
-        app.run(host=args.host, port=int(args.port))
+        app.run(host=args.host, port=int(args.port), use_reloader=False)

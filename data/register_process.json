@@ -1,10 +1,11 @@
 {
   "running": true,
-  "pid": 22144,
-  "start_time": "2026-02-01T17:41:21.679026",
+  "pid": 16808,
+  "start_time": "2026-02-02T22:29:07.570476",
+  "updated_at": 1770043855.7842176,
   "stats": {
     "success_count": 0,
-    "total_attempts": 22126,
+    "total_attempts": 179,
     "last_register_time": null
   }
 }

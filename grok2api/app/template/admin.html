@@ -538,9 +538,9 @@
       <div class="grid gap-6 lg:grid-cols-2">
         <!-- 注册日志 -->
         <div class="rounded-lg border border-border bg-background">
-          <div class="flex items-center justify-between p-4 border-b border-border">
+        <div class="flex items-center justify-between p-4 border-b border-border">
             <h3 class="font-semibold">注册日志</h3>
-            <button onclick="loadRegisterLogs()" class="text-xs text-muted-foreground hover:text-foreground">刷新</button>
+          <button onclick="loadRegisterLogs(true)" class="text-xs text-muted-foreground hover:text-foreground">刷新</button>
           </div>
           <div id="registerLogs" class="p-4 h-96 overflow-auto font-mono text-xs bg-black text-green-400">
             <p class="text-gray-500">加载中...</p>
@@ -2122,6 +2122,7 @@
     };
     let registerLogMode = 'poll';
     let registerLogHasContent = false;
+    let lastRegisterStartTime = null;
 
     const updateRegisterDuration = (running, startTime) => {
       if (running && startTime) {
@@ -2180,8 +2181,19 @@
           $('regAccountCount').textContent = '0 个账号';
         }
 
+        // 运行中且启动时间变化时，清空旧日志并重新拉取
+        if (running && status.start_time && status.start_time !== lastRegisterStartTime) {
+          lastRegisterStartTime = status.start_time;
+          registerLogHasContent = false;
+          registerLogMode = 'poll';
+          $('registerLogs').innerHTML = '<p class="text-gray-500">等待日志...</p>';
+          loadRegisterLogs(true);
+        }
+
         // 自动刷新日志（WebSocket 有内容时不覆盖）
-        if (registerLogMode !== 'ws' || !registerLogHasContent) {
+        if (!registerLogHasContent && running) {
+          loadRegisterLogs(true);
+        } else if (registerLogMode !== 'ws' || !registerLogHasContent) {
           loadRegisterLogs();
         }
       } catch (e) {
@@ -2190,9 +2202,9 @@
     };
 
     // 加载注册机日志
-    const loadRegisterLogs = async () => {
+    const loadRegisterLogs = async (force = false) => {
       try {
-        if (registerLogMode === 'ws' && registerLogHasContent) return;
+        if (!force && registerLogMode === 'ws' && registerLogHasContent) return;
         const r = await apiRequest('/api/register/logs?lines=50');
         if (!r) return;
         const d = await r.json();
@@ -2206,6 +2218,7 @@
         }
 
         registerLogHasContent = true;
+        registerLogMode = 'poll';
         $('registerLogs').innerHTML = logs.map(line => {
           // 简单着色
           let color = 'text-green-400';
@@ -2430,6 +2443,9 @@
       }
 
       try {
+        registerLogMode = 'poll';
+        registerLogHasContent = false;
+        $('registerLogs').innerHTML = '<p class="text-gray-500">启动中...</p>';
         const r = await apiRequest('/api/register/start', {
           method: 'POST',
           body: JSON.stringify({ config: registerConfig })
@@ -2439,6 +2455,7 @@
         if (d.success) {
           showToast('注册机已启动', 'success');
           loadRegisterStatus();
+          loadRegisterLogs(true);
         } else {
           showToast('启动失败: ' + d.message, 'error');
         }
@@ -2538,8 +2555,12 @@
         loadRegisterStatus();
         // 当注册机运行时，自动刷新日志
         const statusText = $('regRunning').textContent;
-        if (statusText.includes('运行中') && (registerLogMode !== 'ws' || !registerLogHasContent)) {
-          loadRegisterLogs();
+        if (statusText.includes('运行中')) {
+          if (!registerLogHasContent) {
+            loadRegisterLogs(true);
+          } else if (registerLogMode !== 'ws') {
+            loadRegisterLogs();
+          }
         }
       }
     }, 5000);
@@ -2570,7 +2591,6 @@
         registerWebSocket.onopen = () => {
           console.log('[WebSocket] 连接成功');
           wsReconnectAttempts = 0;
-          registerLogMode = 'ws';
           // 连接成功后发送心跳
           if (registerWebSocket.readyState === WebSocket.OPEN) {
             registerWebSocket.send('ping');
@@ -2676,6 +2696,7 @@
         logsDiv.innerHTML = '';
       }
       registerLogHasContent = true;
+      registerLogMode = 'ws';
 
       // 追加新日志
       data.logs.forEach(line => {

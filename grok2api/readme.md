@@ -225,7 +225,8 @@ uv run python main.py
 | video_cache_max_size_mb    | global  | 否   | 视频缓存最大容量(MB)                     | 1024   |
 | base_url                   | global  | 否   | 服务基础URL/图片访问基准                 | ""     |
 | api_key                    | grok    | 否   | API 密钥（可选加强安全）                | ""     |
-| proxy_url                  | grok    | 否   | HTTP代理服务器地址                      | ""     |
+| proxy_url                  | grok    | 否   | 服务代理（Grok API/上传图片）           | ""     |
+| cache_proxy_url            | grok    | 否   | 缓存代理（图片/视频缓存下载）           | ""     |
 | stream_chunk_timeout       | grok    | 否   | 流式分块超时时间(秒)                     | 120    |
 | stream_first_response_timeout | grok | 否   | 流式首次响应超时时间(秒)                 | 30     |
 | stream_total_timeout       | grok    | 否   | 流式总超时时间(秒)                       | 600    |
@@ -236,6 +237,19 @@ uv run python main.py
 | temporary                  | grok    | 否   | 会话模式 true(临时)/false               | true   |
 
 <br>
+
+### 代理说明
+
+- 服务代理用于访问 Grok API 和上传图片。
+- 缓存代理专门用于下载图片和视频缓存。
+- 仅设置服务代理时，缓存将复用相同代理；两者都设置时分别使用。
+
+### 403 处理建议
+
+- 403 通常是被 Cloudflare 拦截，可尝试：
+  - 更换服务器 IP
+  - 配置代理 IP
+  - 在服务器上访问 `grok.com` 通过 CF 验证后，用 F12 获取 `cf_clearance`
 
 ## ⚠️ 注意事项
 

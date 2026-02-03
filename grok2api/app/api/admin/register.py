@@ -676,46 +676,66 @@ async def _monitor_register_process(process: subprocess.Popen, log_file: Path):
         logger.info(f"开始监控注册机进程 (PID: {process.pid}), 日志文件: {log_file}")
         line_count = 0
         # 用于批量推送日志的缓冲区
-        log_buffer = []
+        log_buffer: List[str] = []
         buffer_size = 5  # 每5行推送一次
 
+        # 使用线程读取 stdout，避免阻塞事件循环
+        queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def _reader():
+            try:
+                if process.stdout is None:
+                    return
+                for line in process.stdout:
+                    loop.call_soon_threadsafe(queue.put_nowait, line)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        asyncio.create_task(asyncio.to_thread(_reader))
+
         with open(log_file, 'a', encoding='utf-8') as f:
-            for line in process.stdout:
+            while True:
+                line = await queue.get()
+                if line is None:
+                    break
                 line = line.strip()
-                if line:
-                    # 写入文件并立即 flush
-                    f.write(f"{line}\n")
-                    f.flush()
-                    # 同时输出到 logger（便于调试）
-                    logger.info(f"[注册机] {line}")
-                    line_count += 1
+                if not line:
+                    continue
 
-                    # 添加到日志缓冲区
-                    log_buffer.append(line)
+                # 写入文件并立即 flush
+                f.write(f"{line}\n")
+                f.flush()
+                # 同时输出到 logger（便于调试）
+                logger.info(f"[注册机] {line}")
+                line_count += 1
 
-                    # 每写入 buffer_size 行或到达特定计数时推送
-                    if len(log_buffer) >= buffer_size or line_count % 10 == 0:
-                        # 实时推送日志到 WebSocket 客户端
-                        if ws_manager.active_connections:
-                            asyncio.create_task(ws_manager.send_log_update(log_buffer.copy()))
-                        log_buffer.clear()
+                # 添加到日志缓冲区
+                log_buffer.append(line)
 
-                    # 每写入 10 行日志记录一次
-                    if line_count % 10 == 0:
-                        logger.info(f"已记录 {line_count} 行日志")
+                # 每写入 buffer_size 行或到达特定计数时推送
+                if len(log_buffer) >= buffer_size or line_count % 10 == 0:
+                    # 实时推送日志到 WebSocket 客户端
+                    if ws_manager.active_connections:
+                        asyncio.create_task(ws_manager.send_log_update(log_buffer.copy()))
+                    log_buffer.clear()
 
-                    # 解析日志更新统计，并推送状态更新
-                    stats_updated = _parse_register_log(line, broadcast=True)
-                    if stats_updated and ws_manager.active_connections:
-                        # 推送完整状态更新
-                        asyncio.create_task(ws_manager.send_status_update(_register_status.copy()))
+                # 每写入 10 行日志记录一次
+                if line_count % 10 == 0:
+                    logger.info(f"已记录 {line_count} 行日志")
+
+                # 解析日志更新统计，并推送状态更新
+                stats_updated = _parse_register_log(line, broadcast=True)
+                if stats_updated and ws_manager.active_connections:
+                    # 推送完整状态更新
+                    asyncio.create_task(ws_manager.send_status_update(_register_status.copy()))
 
         # 推送剩余的日志
         if log_buffer and ws_manager.active_connections:
             asyncio.create_task(ws_manager.send_log_update(log_buffer))
 
-        # 进程结束
-        returncode = process.wait()
+        # 进程结束（放到线程避免阻塞）
+        returncode = await asyncio.to_thread(process.wait)
         logger.info(f"注册机进程已退出 (PID: {process.pid}, 返回码: {returncode})")
 
         # 更新状态并推送
