@@ -491,9 +491,11 @@ async def start_register(request: RegisterStartRequest, _: bool = Depends(verify
 
         logger.info(f"[环境检测] 最终使用的 Solver URL: {solver_url}")
 
-        # 准备日志文件
+        # 准备日志文件 (清空旧日志)
         log_file = REGISTER_LOG_DIR / "register.log"
         log_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_file, 'w', encoding='utf-8') as f:
+            f.write(f"--- 注册机启动于 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
 
         # 启动进程
         process = subprocess.Popen(
@@ -694,6 +696,7 @@ async def _monitor_register_process(process: subprocess.Popen, log_file: Path):
 
         asyncio.create_task(asyncio.to_thread(_reader))
 
+        # 使用 'a' 模式继续追加（因为上面 start_register 已经创建/清空了文件）
         with open(log_file, 'a', encoding='utf-8') as f:
             while True:
                 line = await queue.get()

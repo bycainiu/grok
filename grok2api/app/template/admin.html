@@ -2108,7 +2108,30 @@
     const saveGrokSettings = async () => { const pu = $('cfgProxyUrl').value.trim(), cf = $('cfgCfClearance').value.trim(); const cleanCf = cf.startsWith('cf_clearance=') ? cf.split('cf_clearance=')[1] : cf; const retryCodesStr = $('cfgRetryStatusCodes').value.trim(); const retryCodes = retryCodesStr ? retryCodesStr.split(',').map(c => parseInt(c.trim())).filter(c => !isNaN(c)) : [401, 429]; const kc = { api_key: $('cfgApiKey').value, proxy_url: pu, proxy_pool_url: $('cfgProxyPoolUrl').value.trim(), proxy_pool_interval: parseInt($('cfgProxyPoolInterval').value) || 300, cache_proxy_url: pu ? $('cfgCacheProxyUrl').value : '', cf_clearance: cleanCf, x_statsig_id: $('cfgStatsigId').value, dynamic_statsig: $('cfgDynamicStatsig').checked, filtered_tags: $('cfgFilteredTags').value, show_thinking: $('cfgShowThinking').value === 'true', temporary: $('cfgTemporary').value === 'true', stream_chunk_timeout: parseInt($('cfgStreamChunkTimeout').value) || 120, stream_first_response_timeout: parseInt($('cfgStreamFirstResponseTimeout').value) || 30, stream_total_timeout: parseInt($('cfgStreamTotalTimeout').value) || 600, retry_status_codes: retryCodes }; try { const r = await apiRequest('/api/settings'); if (!r) return; const d = await r.json(); if (!d.success) return showToast('加载配置失败', 'error'); const s = await apiRequest('/api/settings', { method: 'POST', body: JSON.stringify({ global_config: d.data.global, grok_config: kc }) }); if (!s) return; const sd = await s.json(); sd.success ? showToast('Grok配置保存成功', 'success') : showToast('保存失败: ' + (sd.error || '未知错误'), 'error') } catch (e) { showToast('保存失败: ' + e.message, 'error') } };
     const updateHoverCardPosition = c => { const t = c.querySelector('.hover-card-trigger'), ct = c.querySelector('.hover-card-content'); if (!t || !ct) return; const { top, bottom } = t.getBoundingClientRect(), h = window.innerHeight; ct.classList.remove('top', 'bottom'); const { visibility: v, opacity: o } = getComputedStyle(ct); Object.assign(ct.style, { visibility: 'hidden', opacity: '1' }); const ch = ct.offsetHeight; Object.assign(ct.style, { visibility: v, opacity: o }); ct.classList.add(top > ch + 10 ? 'top' : h - bottom > ch + 10 ? 'bottom' : 'top') };
     const loadStorageMode = async () => { const modeConfig = { MYSQL: { classes: ['bg-blue-50', 'text-blue-700', 'border-blue-200'], tooltip: '数据库连接模式 - 数据持久化存储，修改配置时可能稍慢但更安全' }, REDIS: { classes: ['bg-purple-50', 'text-purple-700', 'border-purple-200'], tooltip: 'Redis缓存模式 - 高速内存存储，数据持久化且读写性能极佳' }, FILE: { classes: ['bg-green-50', 'text-green-700', 'border-green-200'], tooltip: '文件存储模式 - 本地文件存储，读写速度快' } }; const applyMode = (mode) => { $('storageModeText').textContent = mode; const config = modeConfig[mode] || modeConfig.FILE; $('storageMode').classList.add(...config.classes); $('storageModeTooltip').textContent = config.tooltip; updateHoverCardPosition($('storageMode').closest('.hover-card')) }; try { const r = await apiRequest('/api/storage/mode'); if (!r) return; const d = await r.json(); d.success && applyMode(d.data.mode) } catch (e) { console.error('加载存储模式失败:', e); applyMode('FILE') } };
-    window.addEventListener('DOMContentLoaded', () => { loadStorageMode(); refreshTokens(); initCacheViewer(); setInterval(() => { loadStats(); updateRemaining() }, 30000); window.addEventListener('resize', () => { const hoverCard = $('storageMode').closest('.hover-card'); hoverCard && updateHoverCardPosition(hoverCard) }); const hoverCard = $('storageMode').closest('.hover-card'), trigger = hoverCard?.querySelector('.hover-card-trigger'), content = hoverCard?.querySelector('.hover-card-content'); if (trigger && content) { trigger.addEventListener('mouseenter', () => { content.style.opacity = '1'; content.style.visibility = 'visible' }); trigger.addEventListener('mouseleave', () => { content.style.opacity = '0'; content.style.visibility = 'hidden' }) }; $('cfgProxyUrl').addEventListener('input', updateCacheProxyReadonly); $('cfgDynamicStatsig').addEventListener('change', updateStatsigIdState) });
+    window.addEventListener('DOMContentLoaded', () => { 
+      loadStorageMode(); 
+      refreshTokens(); 
+      initCacheViewer(); 
+      setInterval(() => { 
+        loadStats(); 
+        updateRemaining();
+        // 如果注册机面板可见，也定期更新状态
+        if (!$('panelRegister').classList.contains('hidden')) {
+          loadRegisterStatus();
+        }
+      }, 10000); // 10秒更新一次
+      window.addEventListener('resize', () => { 
+        const hoverCard = $('storageMode').closest('.hover-card'); 
+        hoverCard && updateHoverCardPosition(hoverCard) 
+      }); 
+      const hoverCard = $('storageMode').closest('.hover-card'), trigger = hoverCard?.querySelector('.hover-card-trigger'), content = hoverCard?.querySelector('.hover-card-content'); 
+      if (trigger && content) { 
+        trigger.addEventListener('mouseenter', () => { content.style.opacity = '1'; content.style.visibility = 'visible' }); 
+        trigger.addEventListener('mouseleave', () => { content.style.opacity = '0'; content.style.visibility = 'hidden' }) 
+      }; 
+      $('cfgProxyUrl').addEventListener('input', updateCacheProxyReadonly); 
+      $('cfgDynamicStatsig').addEventListener('change', updateStatsigIdState) 
+    });
 
     // --- 注册机管理 ---
 
@@ -2204,35 +2227,42 @@
     // 加载注册机日志
     const loadRegisterLogs = async (force = false) => {
       try {
+        // 如果已经通过 WebSocket 接收实时日志且不是强制刷新，则跳过轮询
         if (!force && registerLogMode === 'ws' && registerLogHasContent) return;
+        
         const r = await apiRequest('/api/register/logs?lines=50');
         if (!r) return;
         const d = await r.json();
         if (!d.success) return;
 
         const logs = d.data.logs || [];
+        const logsDiv = $('registerLogs');
+        
         if (logs.length === 0) {
-          $('registerLogs').innerHTML = '<p class="text-gray-500">暂无日志</p>';
-          registerLogHasContent = false;
+          if (!registerLogHasContent) {
+            logsDiv.innerHTML = '<p class="text-gray-500">暂无日志</p>';
+          }
           return;
         }
 
-        registerLogHasContent = true;
-        registerLogMode = 'poll';
-        $('registerLogs').innerHTML = logs.map(line => {
-          // 简单着色
-          let color = 'text-green-400';
-          if (line.includes('[-]') || line.includes('错误') || line.includes('失败')) {
-            color = 'text-red-400';
-          } else if (line.includes('[*]') || line.includes('正在')) {
-            color = 'text-yellow-400';
-          }
-          return `<p class="${color}">${line}</p>`;
-        }).join('');
-
-        // 滚动到底部
-        const logsDiv = $('registerLogs');
-        logsDiv.scrollTop = logsDiv.scrollHeight;
+        // 如果是轮询模式或强制加载，则重写整个日志区域
+        if (force || registerLogMode === 'poll') {
+           registerLogHasContent = true;
+           logsDiv.innerHTML = logs.map(line => {
+             let color = 'text-green-400';
+             if (line.includes('[-]') || line.includes('错误') || line.includes('失败')) {
+               color = 'text-red-400';
+             } else if (line.includes('[*]') || line.includes('正在')) {
+               color = 'text-yellow-400';
+             } else if (line.includes('[!]') || line.includes('警告')) {
+               color = 'text-orange-400';
+             }
+             return `<p class="${color}">${line}</p>`;
+           }).join('');
+           
+           // 自动滚动到底部
+           logsDiv.scrollTop = logsDiv.scrollHeight;
+        }
       } catch (e) {
         console.error('加载注册机日志失败:', e);
       }
