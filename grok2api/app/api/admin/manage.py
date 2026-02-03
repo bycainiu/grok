@@ -102,12 +102,12 @@ class TestTokenRequest(BaseModel):
 
 def validate_token_type(token_type_str: str) -> TokenType:
     """验证Token类型"""
-    if token_type_str not in ["sso", "ssoSuper"]:
+    if token_type_str not in ["ssoNormal", "ssoSuper"]:
         raise HTTPException(
             status_code=400,
             detail={"error": "无效的Token类型", "code": "INVALID_TYPE"}
         )
-    return TokenType.NORMAL if token_type_str == "sso" else TokenType.SUPER
+    return TokenType.NORMAL if token_type_str == "ssoNormal" else TokenType.SUPER
 
 
 def parse_created_time(created_time) -> Optional[int]:

@@ -57,7 +57,7 @@ services:
       # 端口配置
       - PORT=8000
     volumes:
-      - grok_data:/app/data
+      - ./grok2api/data:/app/data
       - ./logs/grok2api:/app/logs
       # 共享 keys 目录（可写，注册机生成的账号）
       - ./keys:/app/keys
@@ -84,6 +84,4 @@ networks:
     driver: bridge
     name: grok-network
 
-volumes:
-  grok_data:
-    name: grok_data
+
