@@ -67,7 +67,17 @@ async def lifespan(app: FastAPI):
     proxy_url = setting.grok_config.get("proxy_url", "")
     proxy_pool_url = setting.grok_config.get("proxy_pool_url", "")
     proxy_pool_interval = setting.grok_config.get("proxy_pool_interval", 300)
-    proxy_pool.configure(proxy_url, proxy_pool_url, proxy_pool_interval)
+    proxy_pool_scheme = setting.grok_config.get("proxy_pool_scheme", "http")
+    proxy_pool_username = setting.grok_config.get("proxy_pool_username", "")
+    proxy_pool_password = setting.grok_config.get("proxy_pool_password", "")
+    proxy_pool.configure(
+        proxy_url,
+        proxy_pool_url,
+        proxy_pool_interval,
+        proxy_pool_scheme,
+        proxy_pool_username,
+        proxy_pool_password,
+    )
     
     # 3. 异步加载 token 数据
     await token_manager._load_data()

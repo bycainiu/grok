@@ -20,17 +20,36 @@ class ProxyPool:
         self._enabled: bool = False
         self._lock = asyncio.Lock()
         self._secret_provider: Optional[KdlSecretProxy] = None
+        self._pool_scheme: str = "https"
+        self._pool_username: str = ""
+        self._pool_password: str = ""
     
-    def configure(self, proxy_url: str, proxy_pool_url: str = "", proxy_pool_interval: int = 300):
+    def configure(
+        self,
+        proxy_url: str,
+        proxy_pool_url: str = "",
+        proxy_pool_interval: int = 300,
+        proxy_pool_scheme: str = "https",
+        proxy_pool_username: str = "",
+        proxy_pool_password: str = "",
+    ):
         """配置代理池
         
         Args:
             proxy_url: 静态代理URL（socks5h://xxx 或 http://xxx）
             proxy_pool_url: 代理池API URL，返回单个代理地址
             proxy_pool_interval: 代理池刷新间隔（秒）
+            proxy_pool_scheme: 代理池返回ip:port时使用的协议
+            proxy_pool_username: 代理池鉴权用户名
+            proxy_pool_password: 代理池鉴权密码
         """
         self._secret_provider = KdlSecretProxy.from_url(proxy_url) if proxy_url else None
         self._static_proxy = None if self._secret_provider else (self._normalize_proxy(proxy_url) if proxy_url else None)
+        self._pool_scheme = (proxy_pool_scheme or "https").strip().lower()
+        if self._pool_scheme == "socks5":
+            self._pool_scheme = "socks5h"
+        self._pool_username = (proxy_pool_username or "").strip()
+        self._pool_password = (proxy_pool_password or "").strip()
         pool_url = proxy_pool_url.strip() if proxy_pool_url else None
         if pool_url and self._looks_like_proxy_url(pool_url):
             normalized_proxy = self._normalize_proxy(pool_url)
@@ -102,6 +121,8 @@ class ProxyPool:
                     if response.status == 200:
                         proxy_text = await response.text()
                         proxy = self._normalize_proxy(proxy_text.strip())
+                        if not self._validate_proxy(proxy):
+                            proxy = self._build_pool_proxy(proxy)
                         
                         # 验证代理格式
                         if self._validate_proxy(proxy):
@@ -164,6 +185,21 @@ class ProxyPool:
     def _looks_like_proxy_url(self, url: str) -> bool:
         """判断URL是否像代理地址（避免误把代理池API当代理）"""
         return url.startswith(("sock5://", "sock5h://", "socks5://", "socks5h://"))
+
+    def _build_pool_proxy(self, proxy_text: str) -> str:
+        """将代理池返回的ip:port拼成完整代理URL"""
+        raw = (proxy_text or "").strip()
+        if not raw:
+            return raw
+        if raw.startswith(("http://", "https://", "socks5://", "socks5h://")):
+            return raw
+        if ":" not in raw:
+            return raw
+        auth = ""
+        if self._pool_username or self._pool_password:
+            auth = f"{self._pool_username}:{self._pool_password}@"
+        scheme = self._pool_scheme or "https"
+        return f"{scheme}://{auth}{raw}"
 
     async def _get_static_proxy(self) -> Optional[str]:
         if self._secret_provider:

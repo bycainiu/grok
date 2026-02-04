@@ -982,9 +982,27 @@
                 <label class="cfg-label">
                   Proxy Pool URL (代理池API)
                   <span class="help-icon"
-                    title="代理池API地址，返回单个代理URL。留空则使用上方的固定代理。&#10;&#10;返回格式：纯文本，单行代理地址&#10;示例返回：socks5h://1.2.3.4:1080&#10;支持协议：http://, https://, socks5://, socks5h://&#10;API示例：http://your-api.com/get">?</span>
+                    title="代理池API地址，返回单个代理地址。留空则使用上方的固定代理。&#10;&#10;返回格式：纯文本，单行代理地址&#10;可返回完整URL（含协议），也可返回ip:port（将自动拼接协议和鉴权）&#10;示例返回：43.162.126.186:10106 或 socks5h://1.2.3.4:1080&#10;API示例：https://fps.kdlapi.com/api/getfpsip?...">?</span>
                 </label>
-                <input id="cfgProxyPoolUrl" class="cfg-input" placeholder="http://your-proxy-api.com/get">
+                <input id="cfgProxyPoolUrl" class="cfg-input" placeholder="https://fps.kdlapi.com/api/getfpsip?...">
+              </div>
+              <div class="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label class="cfg-label">代理池协议</label>
+                  <select id="cfgProxyPoolScheme" class="cfg-input">
+                    <option value="https">https</option>
+                    <option value="http">http</option>
+                    <option value="socks5h">socks5h</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="cfg-label">代理池鉴权用户</label>
+                  <input id="cfgProxyPoolUsername" class="cfg-input" placeholder="用户名">
+                </div>
+                <div>
+                  <label class="cfg-label">代理池鉴权密码</label>
+                  <input id="cfgProxyPoolPassword" type="password" class="cfg-input" placeholder="密码">
+                </div>
               </div>
               <div>
                 <label class="cfg-label">
@@ -1424,7 +1442,15 @@
             <div class="md:col-span-2">
               <label class="cfg-label">代理 URL</label>
               <input id="regProxyUrl" type="text" class="cfg-input" placeholder="socks5://user:pass@127.0.0.1:7890">
-              <p class="cfg-desc">优先使用此代理。留空则使用下方 KDL 参数自动获取 secret_token</p>
+              <p class="cfg-desc">优先使用此代理。留空则使用下方隧道/KDL参数</p>
+            </div>
+            <div>
+              <label class="cfg-label">代理鉴权用户名</label>
+              <input id="regProxyUsername" type="text" class="cfg-input" placeholder="用户名">
+            </div>
+            <div>
+              <label class="cfg-label">代理鉴权密码</label>
+              <input id="regProxyPassword" type="password" class="cfg-input" placeholder="密码">
             </div>
             <div>
               <label class="cfg-label">KDL Secret ID</label>
@@ -1444,9 +1470,9 @@
             </div>
             <div>
               <label class="cfg-label">KDL 代理协议</label>
-              <select id="regProxyScheme" class="cfg-input">
-                <option value="http">http</option>
-                <option value="https">https</option>
+                  <select id="regProxyScheme" class="cfg-input">
+                    <option value="https">https</option>
+                    <option value="http">http</option>
                 <option value="socks5h">socks5h</option>
               </select>
               <p class="cfg-desc">协议仅影响代理 URL 的 scheme</p>
@@ -2004,7 +2030,7 @@
         }
       } catch (e) { console.error('加载统计失败:', e); showToast('加载统计失败', 'error') }
     };
-    const loadSettings = async () => { try { const r = await apiRequest('/api/settings'); if (!r) return; const d = await r.json(); if (d.success) { const g = d.data.global, k = d.data.grok; const cfClearance = k.cf_clearance || ''; const cleanCfDisplay = cfClearance.startsWith('cf_clearance=') ? cfClearance.split('cf_clearance=')[1] : cfClearance; $('cfgAdminUser').value = g.admin_username || ''; $('cfgAdminPass').value = ''; $('cfgLogLevel').value = g.log_level || 'DEBUG'; $('cfgImageCacheMaxSize').value = g.image_cache_max_size_mb || 500; $('cfgVideoCacheMaxSize').value = g.video_cache_max_size_mb || 1000; $('cfgImageMode').value = g.image_mode || 'url'; $('cfgBaseUrl').value = g.base_url || ''; $('cfgApiKey').value = k.api_key || ''; $('cfgProxyUrl').value = k.proxy_url || ''; $('cfgProxyPoolUrl').value = k.proxy_pool_url || ''; $('cfgProxyPoolInterval').value = k.proxy_pool_interval || 300; $('cfgCacheProxyUrl').value = k.cache_proxy_url || ''; $('cfgCfClearance').value = cleanCfDisplay; $('cfgStatsigId').value = k.x_statsig_id || ''; $('cfgDynamicStatsig').checked = k.dynamic_statsig !== false; updateStatsigIdState(); $('cfgFilteredTags').value = k.filtered_tags || ''; $('cfgShowThinking').value = k.show_thinking !== false ? 'true' : 'false'; $('cfgTemporary').value = k.temporary !== false ? 'true' : 'false'; $('cfgStreamChunkTimeout').value = k.stream_chunk_timeout || 120; $('cfgStreamFirstResponseTimeout').value = k.stream_first_response_timeout || 30; $('cfgStreamTotalTimeout').value = k.stream_total_timeout || 600; $('cfgRetryStatusCodes').value = (k.retry_status_codes || [401, 429]).join(','); updateCacheProxyReadonly(); await loadCacheSize() } } catch (e) { console.error('加载配置失败:', e); showToast('加载配置失败', 'error') } };
+    const loadSettings = async () => { try { const r = await apiRequest('/api/settings'); if (!r) return; const d = await r.json(); if (d.success) { const g = d.data.global, k = d.data.grok; const cfClearance = k.cf_clearance || ''; const cleanCfDisplay = cfClearance.startsWith('cf_clearance=') ? cfClearance.split('cf_clearance=')[1] : cfClearance; $('cfgAdminUser').value = g.admin_username || ''; $('cfgAdminPass').value = ''; $('cfgLogLevel').value = g.log_level || 'DEBUG'; $('cfgImageCacheMaxSize').value = g.image_cache_max_size_mb || 500; $('cfgVideoCacheMaxSize').value = g.video_cache_max_size_mb || 1000; $('cfgImageMode').value = g.image_mode || 'url'; $('cfgBaseUrl').value = g.base_url || ''; $('cfgApiKey').value = k.api_key || ''; $('cfgProxyUrl').value = k.proxy_url || ''; $('cfgProxyPoolUrl').value = k.proxy_pool_url || ''; $('cfgProxyPoolInterval').value = k.proxy_pool_interval || 300; $('cfgProxyPoolScheme').value = k.proxy_pool_scheme || 'https'; $('cfgProxyPoolUsername').value = k.proxy_pool_username || ''; $('cfgProxyPoolPassword').value = k.proxy_pool_password || ''; $('cfgCacheProxyUrl').value = k.cache_proxy_url || ''; $('cfgCfClearance').value = cleanCfDisplay; $('cfgStatsigId').value = k.x_statsig_id || ''; $('cfgDynamicStatsig').checked = k.dynamic_statsig !== false; updateStatsigIdState(); $('cfgFilteredTags').value = k.filtered_tags || ''; $('cfgShowThinking').value = k.show_thinking !== false ? 'true' : 'false'; $('cfgTemporary').value = k.temporary !== false ? 'true' : 'false'; $('cfgStreamChunkTimeout').value = k.stream_chunk_timeout || 120; $('cfgStreamFirstResponseTimeout').value = k.stream_first_response_timeout || 30; $('cfgStreamTotalTimeout').value = k.stream_total_timeout || 600; $('cfgRetryStatusCodes').value = (k.retry_status_codes || [401, 429]).join(','); updateCacheProxyReadonly(); await loadCacheSize() } } catch (e) { console.error('加载配置失败:', e); showToast('加载配置失败', 'error') } };
     const loadCacheSize = async () => { try { const r = await apiRequest('/api/cache/size'); if (!r) return; const d = await r.json(); if (d.success) { ['image', 'video', 'total'].forEach(t => $(`${t}CacheSize`).value = d.data[`${t}_size`] || '0 MB') } } catch (e) { console.error('加载缓存大小失败:', e);['image', 'video', 'total'].forEach(t => $(`${t}CacheSize`).value = '0 MB') } };
     const clearCacheByType = async (type, url, msg) => { if (!confirm(msg)) return; try { const r = await apiRequest(url, { method: 'POST' }); if (!r) return; const d = await r.json(); d.success ? (showToast(`${type}缓存清理完成，已删除 ${d.data.deleted_count || 0} 个文件`, 'success'), await loadCacheSize(), await loadCachePreview(true)) : showToast('清理失败: ' + (d.error || '未知错误'), 'error') } catch (e) { showToast('清理失败: ' + e.message, 'error') } };
     const clearImageCache = () => clearCacheByType('图片', '/api/cache/clear/images', '确定要清理图片缓存吗？此操作将删除所有图片缓存文件！');
@@ -2150,7 +2176,7 @@
     const refreshCachePreview = () => loadCachePreview(true);
     const loadMoreCachePreview = () => loadCachePreview(false);
     const saveGlobalSettings = async () => { const gc = { admin_username: $('cfgAdminUser').value, log_level: $('cfgLogLevel').value, image_cache_max_size_mb: parseInt($('cfgImageCacheMaxSize').value) || 500, video_cache_max_size_mb: parseInt($('cfgVideoCacheMaxSize').value) || 1000, image_mode: $('cfgImageMode').value, base_url: $('cfgBaseUrl').value }; if ($('cfgAdminPass').value) gc.admin_password = $('cfgAdminPass').value; try { const r = await apiRequest('/api/settings'); if (!r) return; const d = await r.json(); if (!d.success) return showToast('加载配置失败', 'error'); const s = await apiRequest('/api/settings', { method: 'POST', body: JSON.stringify({ global_config: gc, grok_config: d.data.grok }) }); if (!s) return; const sd = await s.json(); sd.success ? (showToast('全局配置保存成功', 'success'), $('cfgAdminPass').value = '') : showToast('保存失败: ' + (sd.error || '未知错误'), 'error') } catch (e) { showToast('保存失败: ' + e.message, 'error') } };
-    const saveGrokSettings = async () => { const pu = $('cfgProxyUrl').value.trim(), cf = $('cfgCfClearance').value.trim(); const cleanCf = cf.startsWith('cf_clearance=') ? cf.split('cf_clearance=')[1] : cf; const retryCodesStr = $('cfgRetryStatusCodes').value.trim(); const retryCodes = retryCodesStr ? retryCodesStr.split(',').map(c => parseInt(c.trim())).filter(c => !isNaN(c)) : [401, 429]; const kc = { api_key: $('cfgApiKey').value, proxy_url: pu, proxy_pool_url: $('cfgProxyPoolUrl').value.trim(), proxy_pool_interval: parseInt($('cfgProxyPoolInterval').value) || 300, cache_proxy_url: pu ? $('cfgCacheProxyUrl').value : '', cf_clearance: cleanCf, x_statsig_id: $('cfgStatsigId').value, dynamic_statsig: $('cfgDynamicStatsig').checked, filtered_tags: $('cfgFilteredTags').value, show_thinking: $('cfgShowThinking').value === 'true', temporary: $('cfgTemporary').value === 'true', stream_chunk_timeout: parseInt($('cfgStreamChunkTimeout').value) || 120, stream_first_response_timeout: parseInt($('cfgStreamFirstResponseTimeout').value) || 30, stream_total_timeout: parseInt($('cfgStreamTotalTimeout').value) || 600, retry_status_codes: retryCodes }; try { const r = await apiRequest('/api/settings'); if (!r) return; const d = await r.json(); if (!d.success) return showToast('加载配置失败', 'error'); const s = await apiRequest('/api/settings', { method: 'POST', body: JSON.stringify({ global_config: d.data.global, grok_config: kc }) }); if (!s) return; const sd = await s.json(); sd.success ? showToast('Grok配置保存成功', 'success') : showToast('保存失败: ' + (sd.error || '未知错误'), 'error') } catch (e) { showToast('保存失败: ' + e.message, 'error') } };
+    const saveGrokSettings = async () => { const pu = $('cfgProxyUrl').value.trim(), cf = $('cfgCfClearance').value.trim(); const cleanCf = cf.startsWith('cf_clearance=') ? cf.split('cf_clearance=')[1] : cf; const retryCodesStr = $('cfgRetryStatusCodes').value.trim(); const retryCodes = retryCodesStr ? retryCodesStr.split(',').map(c => parseInt(c.trim())).filter(c => !isNaN(c)) : [401, 429]; const kc = { api_key: $('cfgApiKey').value, proxy_url: pu, proxy_pool_url: $('cfgProxyPoolUrl').value.trim(), proxy_pool_interval: parseInt($('cfgProxyPoolInterval').value) || 300, proxy_pool_scheme: $('cfgProxyPoolScheme').value, proxy_pool_username: $('cfgProxyPoolUsername').value.trim(), proxy_pool_password: $('cfgProxyPoolPassword').value.trim(), cache_proxy_url: pu ? $('cfgCacheProxyUrl').value : '', cf_clearance: cleanCf, x_statsig_id: $('cfgStatsigId').value, dynamic_statsig: $('cfgDynamicStatsig').checked, filtered_tags: $('cfgFilteredTags').value, show_thinking: $('cfgShowThinking').value === 'true', temporary: $('cfgTemporary').value === 'true', stream_chunk_timeout: parseInt($('cfgStreamChunkTimeout').value) || 120, stream_first_response_timeout: parseInt($('cfgStreamFirstResponseTimeout').value) || 30, stream_total_timeout: parseInt($('cfgStreamTotalTimeout').value) || 600, retry_status_codes: retryCodes }; try { const r = await apiRequest('/api/settings'); if (!r) return; const d = await r.json(); if (!d.success) return showToast('加载配置失败', 'error'); const s = await apiRequest('/api/settings', { method: 'POST', body: JSON.stringify({ global_config: d.data.global, grok_config: kc }) }); if (!s) return; const sd = await s.json(); sd.success ? showToast('Grok配置保存成功', 'success') : showToast('保存失败: ' + (sd.error || '未知错误'), 'error') } catch (e) { showToast('保存失败: ' + e.message, 'error') } };
     const updateHoverCardPosition = c => { const t = c.querySelector('.hover-card-trigger'), ct = c.querySelector('.hover-card-content'); if (!t || !ct) return; const { top, bottom } = t.getBoundingClientRect(), h = window.innerHeight; ct.classList.remove('top', 'bottom'); const { visibility: v, opacity: o } = getComputedStyle(ct); Object.assign(ct.style, { visibility: 'hidden', opacity: '1' }); const ch = ct.offsetHeight; Object.assign(ct.style, { visibility: v, opacity: o }); ct.classList.add(top > ch + 10 ? 'top' : h - bottom > ch + 10 ? 'bottom' : 'top') };
     const loadStorageMode = async () => { const modeConfig = { MYSQL: { classes: ['bg-blue-50', 'text-blue-700', 'border-blue-200'], tooltip: '数据库连接模式 - 数据持久化存储，修改配置时可能稍慢但更安全' }, REDIS: { classes: ['bg-purple-50', 'text-purple-700', 'border-purple-200'], tooltip: 'Redis缓存模式 - 高速内存存储，数据持久化且读写性能极佳' }, FILE: { classes: ['bg-green-50', 'text-green-700', 'border-green-200'], tooltip: '文件存储模式 - 本地文件存储，读写速度快' } }; const applyMode = (mode) => { $('storageModeText').textContent = mode; const config = modeConfig[mode] || modeConfig.FILE; $('storageMode').classList.add(...config.classes); $('storageModeTooltip').textContent = config.tooltip; updateHoverCardPosition($('storageMode').closest('.hover-card')) }; try { const r = await apiRequest('/api/storage/mode'); if (!r) return; const d = await r.json(); d.success && applyMode(d.data.mode) } catch (e) { console.error('加载存储模式失败:', e); applyMode('FILE') } };
     window.addEventListener('DOMContentLoaded', () => { 
@@ -2188,11 +2214,13 @@
       turnstile_solver_url: 'http://127.0.0.1:5072',
       yescaptcha_key: '',
       proxy_url: '',
+      proxy_username: '',
+      proxy_password: '',
       proxy_secret_id: '',
       proxy_secret_key: '',
       proxy_host: '',
       proxy_port: '',
-      proxy_scheme: 'http'
+      proxy_scheme: 'https'
     };
     let registerLogMode = 'poll';
     let registerLogHasContent = false;
@@ -2343,11 +2371,13 @@
           $('regTurnstileSolverUrl').value = config.turnstile_solver_url || 'http://127.0.0.1:5072';
           $('regYesCaptcha').value = config.yescaptcha_key || '';
           $('regProxyUrl').value = config.proxy_url || '';
+          $('regProxyUsername').value = config.proxy_username || '';
+          $('regProxyPassword').value = config.proxy_password || '';
           $('regProxySecretId').value = config.proxy_secret_id || '';
           $('regProxySecretKey').value = config.proxy_secret_key || '';
           $('regProxyHost').value = config.proxy_host || '';
           $('regProxyPort').value = config.proxy_port || '';
-          $('regProxyScheme').value = config.proxy_scheme || 'http';
+          $('regProxyScheme').value = config.proxy_scheme || 'https';
           // 保存当前配置以便后续使用
           registerConfig = {
             duckmail_base_url: config.duckmail_base_url || 'https://api.duckmail.sbs',
@@ -2357,11 +2387,13 @@
             turnstile_solver_url: config.turnstile_solver_url || 'http://127.0.0.1:5072',
             yescaptcha_key: config.yescaptcha_key || '',
             proxy_url: config.proxy_url || '',
+            proxy_username: config.proxy_username || '',
+            proxy_password: config.proxy_password || '',
             proxy_secret_id: config.proxy_secret_id || '',
             proxy_secret_key: config.proxy_secret_key || '',
             proxy_host: config.proxy_host || '',
             proxy_port: config.proxy_port || '',
-            proxy_scheme: config.proxy_scheme || 'http'
+            proxy_scheme: config.proxy_scheme || 'https'
           };
 
           // 显示环境检测提示
@@ -2489,6 +2521,8 @@
       const turnstile_solver_url = $('regTurnstileSolverUrl').value.trim() || 'http://127.0.0.1:5072';
       const yescaptcha_key = $('regYesCaptcha').value.trim();
       const proxy_url = $('regProxyUrl').value.trim();
+      const proxy_username = $('regProxyUsername').value.trim();
+      const proxy_password = $('regProxyPassword').value.trim();
       const proxy_secret_id = $('regProxySecretId').value.trim();
       const proxy_secret_key = $('regProxySecretKey').value.trim();
       const proxy_host = $('regProxyHost').value.trim();
@@ -2509,6 +2543,12 @@
           return;
         }
       }
+      if (!proxy_url && (proxy_host || proxy_port)) {
+        if (!proxy_host || !proxy_port) {
+          showToast('代理主机或端口不完整', 'error');
+          return;
+        }
+      }
 
       const config = {
         duckmail_base_url,
@@ -2518,6 +2558,8 @@
         turnstile_solver_url,
         yescaptcha_key,
         proxy_url,
+        proxy_username,
+        proxy_password,
         proxy_secret_id,
         proxy_secret_key,
         proxy_host,

@@ -26,13 +26,17 @@ def get_proxy_url() -> str:
     if proxy_url:
         return _resolve_proxy_url(proxy_url) or ""
 
+    username = os.getenv("PROXY_USERNAME", "").strip()
+    password = os.getenv("PROXY_PASSWORD", "").strip()
     secret_id = os.getenv("PROXY_SECRET_ID", "").strip()
     secret_key = os.getenv("PROXY_SECRET_KEY", "").strip()
     host = os.getenv("PROXY_HOST", "").strip()
     port = os.getenv("PROXY_PORT", "").strip()
-    scheme = (os.getenv("PROXY_SCHEME", "http") or "http").strip().lower()
+    scheme = (os.getenv("PROXY_SCHEME", "https") or "https").strip().lower()
     if secret_id and secret_key and host and port:
         return _build_kdl_proxy(secret_id, secret_key, host, port, scheme) or ""
+    if host and port:
+        return _build_basic_proxy(host, port, scheme, username, password) or ""
 
     return ""
 
@@ -41,6 +45,12 @@ def _resolve_proxy_url(proxy_url: str) -> Optional[str]:
     proxy_url = proxy_url.strip()
     if proxy_url.startswith("kdl://"):
         return _parse_kdl_url(proxy_url)
+    if "://" not in proxy_url and ":" in proxy_url:
+        username = os.getenv("PROXY_USERNAME", "").strip()
+        password = os.getenv("PROXY_PASSWORD", "").strip()
+        scheme = (os.getenv("PROXY_SCHEME", "https") or "https").strip().lower()
+        host, port = proxy_url.split(":", 1)
+        return _build_basic_proxy(host.strip(), port.strip(), scheme, username, password)
     return _normalize_proxy(proxy_url)
 
 
@@ -70,12 +80,25 @@ def _build_kdl_proxy(secret_id: str, secret_key: str, host: str, port: str, sche
     if scheme == "socks5":
         scheme = "socks5h"
     if scheme not in ("http", "https", "socks5", "socks5h"):
-        scheme = "http"
+        scheme = "https"
 
     token = _get_secret_token_cached(secret_id, secret_key)
     if not token:
         return None
     return f"{scheme}://{secret_id}:{token}@{host}:{port}"
+
+
+def _build_basic_proxy(host: str, port: str, scheme: str, username: str, password: str) -> Optional[str]:
+    if not host or not port:
+        return None
+    if scheme == "socks5":
+        scheme = "socks5h"
+    if scheme not in ("http", "https", "socks5", "socks5h"):
+        scheme = "https"
+    auth = ""
+    if username or password:
+        auth = f"{username}:{password}@"
+    return f"{scheme}://{auth}{host}:{port}"
 
 
 def _get_secret_token_cached(secret_id: str, secret_key: str) -> Optional[str]:
