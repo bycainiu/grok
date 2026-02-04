@@ -14,6 +14,7 @@ import requests
 import random
 import string
 from .env_loader import load_register_env
+from .proxy_manager import get_proxy_url
 
 
 class EmailService:
@@ -26,6 +27,8 @@ class EmailService:
         self.worker_domain = os.getenv("WORKER_DOMAIN")
         self.email_domain = os.getenv("EMAIL_DOMAIN")
         self.admin_password = os.getenv("ADMIN_PASSWORD")
+        proxy_url = get_proxy_url()
+        self.proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
 
         if not all([self.worker_domain, self.email_domain, self.admin_password]):
             raise ValueError("Missing required environment variables: WORKER_DOMAIN, EMAIL_DOMAIN, ADMIN_PASSWORD")
@@ -56,7 +59,8 @@ class EmailService:
                     'x-admin-auth': self.admin_password,
                     "Content-Type": "application/json"
                 },
-                timeout=10 # 添加超时
+                timeout=10, # 添加超时
+                proxies=self.proxies
             )
             if res.status_code == 200:
                 data = res.json()
@@ -84,7 +88,8 @@ class EmailService:
                 headers={
                     "Authorization": f"Bearer {jwt}",
                     "Content-Type": "application/json"
-                }
+                },
+                proxies=self.proxies
             )
 
             if res.status_code == 200:

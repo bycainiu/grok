@@ -974,7 +974,7 @@
                 <label class="cfg-label">
                   Proxy Url (服务代理)
                   <span class="help-icon"
-                    title="API请求和上传使用的代理。支持 http、https、socks5。格式：socks5://user:pass@host:port">?</span>
+                    title="API请求和上传使用的代理。支持 http、https、socks5。格式：socks5://user:pass@host:port&#10;支持KDL密钥格式：kdl://secret_id:secret_key@host:port?scheme=http">?</span>
                 </label>
                 <input id="cfgProxyUrl" class="cfg-input" placeholder="socks5://username:password@127.0.0.1:7890">
               </div>
@@ -1405,6 +1405,51 @@
               <label class="cfg-label">YesCaptcha Key (可选)</label>
               <input id="regYesCaptcha" type="text" class="cfg-input" placeholder="留空使用本地 Turnstile Solver">
               <p class="cfg-desc">使用第三方 CAPTCHA 服务（填写后将忽略上面的 Solver URL）</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 代理设置 -->
+        <div class="space-y-4">
+          <div class="flex items-center gap-2 pb-2 border-b border-border">
+            <svg class="h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 12h18" />
+              <path d="M7 6h10" />
+              <path d="M7 18h10" />
+            </svg>
+            <h4 class="font-semibold">代理设置</h4>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="md:col-span-2">
+              <label class="cfg-label">代理 URL</label>
+              <input id="regProxyUrl" type="text" class="cfg-input" placeholder="socks5://user:pass@127.0.0.1:7890">
+              <p class="cfg-desc">优先使用此代理。留空则使用下方 KDL 参数自动获取 secret_token</p>
+            </div>
+            <div>
+              <label class="cfg-label">KDL Secret ID</label>
+              <input id="regProxySecretId" type="text" class="cfg-input" placeholder="secret_id">
+            </div>
+            <div>
+              <label class="cfg-label">KDL Secret Key</label>
+              <input id="regProxySecretKey" type="password" class="cfg-input" placeholder="secret_key">
+            </div>
+            <div>
+              <label class="cfg-label">KDL 代理主机</label>
+              <input id="regProxyHost" type="text" class="cfg-input" placeholder="tps123.kdlapi.com">
+            </div>
+            <div>
+              <label class="cfg-label">KDL 代理端口</label>
+              <input id="regProxyPort" type="number" class="cfg-input" placeholder="15818">
+            </div>
+            <div>
+              <label class="cfg-label">KDL 代理协议</label>
+              <select id="regProxyScheme" class="cfg-input">
+                <option value="http">http</option>
+                <option value="https">https</option>
+                <option value="socks5h">socks5h</option>
+              </select>
+              <p class="cfg-desc">协议仅影响代理 URL 的 scheme</p>
             </div>
           </div>
         </div>
@@ -2141,7 +2186,13 @@
       email_domain: '',
       concurrent_threads: 3,
       turnstile_solver_url: 'http://127.0.0.1:5072',
-      yescaptcha_key: ''
+      yescaptcha_key: '',
+      proxy_url: '',
+      proxy_secret_id: '',
+      proxy_secret_key: '',
+      proxy_host: '',
+      proxy_port: '',
+      proxy_scheme: 'http'
     };
     let registerLogMode = 'poll';
     let registerLogHasContent = false;
@@ -2291,6 +2342,12 @@
           $('regThreads').value = config.concurrent_threads || 3;
           $('regTurnstileSolverUrl').value = config.turnstile_solver_url || 'http://127.0.0.1:5072';
           $('regYesCaptcha').value = config.yescaptcha_key || '';
+          $('regProxyUrl').value = config.proxy_url || '';
+          $('regProxySecretId').value = config.proxy_secret_id || '';
+          $('regProxySecretKey').value = config.proxy_secret_key || '';
+          $('regProxyHost').value = config.proxy_host || '';
+          $('regProxyPort').value = config.proxy_port || '';
+          $('regProxyScheme').value = config.proxy_scheme || 'http';
           // 保存当前配置以便后续使用
           registerConfig = {
             duckmail_base_url: config.duckmail_base_url || 'https://api.duckmail.sbs',
@@ -2298,7 +2355,13 @@
             email_domain: config.email_domain || '',
             concurrent_threads: config.concurrent_threads || 3,
             turnstile_solver_url: config.turnstile_solver_url || 'http://127.0.0.1:5072',
-            yescaptcha_key: config.yescaptcha_key || ''
+            yescaptcha_key: config.yescaptcha_key || '',
+            proxy_url: config.proxy_url || '',
+            proxy_secret_id: config.proxy_secret_id || '',
+            proxy_secret_key: config.proxy_secret_key || '',
+            proxy_host: config.proxy_host || '',
+            proxy_port: config.proxy_port || '',
+            proxy_scheme: config.proxy_scheme || 'http'
           };
 
           // 显示环境检测提示
@@ -2425,6 +2488,12 @@
       const concurrent_threads = parseInt($('regThreads').value) || 3;
       const turnstile_solver_url = $('regTurnstileSolverUrl').value.trim() || 'http://127.0.0.1:5072';
       const yescaptcha_key = $('regYesCaptcha').value.trim();
+      const proxy_url = $('regProxyUrl').value.trim();
+      const proxy_secret_id = $('regProxySecretId').value.trim();
+      const proxy_secret_key = $('regProxySecretKey').value.trim();
+      const proxy_host = $('regProxyHost').value.trim();
+      const proxy_port = $('regProxyPort').value.trim();
+      const proxy_scheme = $('regProxyScheme').value;
 
       if (!duckmail_base_url) {
         showToast('请填写 DuckMail API 地址', 'error');
@@ -2434,6 +2503,12 @@
         showToast('请选择邮箱域名', 'error');
         return;
       }
+      if (!proxy_url && (proxy_secret_id || proxy_secret_key || proxy_host || proxy_port)) {
+        if (!proxy_secret_id || !proxy_secret_key || !proxy_host || !proxy_port) {
+          showToast('KDL 代理参数不完整', 'error');
+          return;
+        }
+      }
 
       const config = {
         duckmail_base_url,
@@ -2441,7 +2516,13 @@
         email_domain,
         concurrent_threads,
         turnstile_solver_url,
-        yescaptcha_key
+        yescaptcha_key,
+        proxy_url,
+        proxy_secret_id,
+        proxy_secret_key,
+        proxy_host,
+        proxy_port,
+        proxy_scheme
       };
 
       try {

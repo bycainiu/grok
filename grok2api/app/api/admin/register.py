@@ -90,7 +90,12 @@ def _get_project_root():
     # 方法2: 检查 /app/grok.py 是否存在（挂载的文件）
     if Path("/app/grok.py").exists():
         return Path("/app")
-    # 本地开发环境
+    # 本地开发环境：向上查找 grok.py 所在目录
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        if (parent / "grok.py").exists():
+            return parent
+    # 兜底：保持旧逻辑
     return Path(__file__).parents[4]
 
 
@@ -173,6 +178,13 @@ class RegisterConfigRequest(BaseModel):
     # Turnstile Solver 配置
     turnstile_solver_url: str = "http://127.0.0.1:5072"
     yescaptcha_key: Optional[str] = None
+    # 代理配置
+    proxy_url: Optional[str] = ""
+    proxy_secret_id: Optional[str] = ""
+    proxy_secret_key: Optional[str] = ""
+    proxy_host: Optional[str] = ""
+    proxy_port: Optional[str] = ""
+    proxy_scheme: Optional[str] = "http"
 
 
 class RegisterStartRequest(BaseModel):
@@ -405,7 +417,13 @@ async def get_register_config(_: bool = Depends(verify_admin_session)) -> Dict[s
                     "email_domain": "",
                     "concurrent_threads": 3,
                     "turnstile_solver_url": default_solver_url,
-                    "yescaptcha_key": ""
+                    "yescaptcha_key": "",
+                    "proxy_url": "",
+                    "proxy_secret_id": "",
+                    "proxy_secret_key": "",
+                    "proxy_host": "",
+                    "proxy_port": "",
+                    "proxy_scheme": "http"
                 }
             }
 
@@ -418,7 +436,13 @@ async def get_register_config(_: bool = Depends(verify_admin_session)) -> Dict[s
                 "email_domain": config.get("EMAIL_DOMAIN", ""),
                 "concurrent_threads": int(config.get("CONCURRENT_THREADS", "3")),
                 "turnstile_solver_url": solver_url or default_solver_url,
-                "yescaptcha_key": config.get("YESCAPTCHA_KEY", "")
+                "yescaptcha_key": config.get("YESCAPTCHA_KEY", ""),
+                "proxy_url": config.get("PROXY_URL", ""),
+                "proxy_secret_id": config.get("PROXY_SECRET_ID", ""),
+                "proxy_secret_key": config.get("PROXY_SECRET_KEY", ""),
+                "proxy_host": config.get("PROXY_HOST", ""),
+                "proxy_port": config.get("PROXY_PORT", ""),
+                "proxy_scheme": config.get("PROXY_SCHEME", "http")
             }
         }
     except Exception as e:
@@ -436,7 +460,13 @@ async def save_register_config(request: RegisterConfigRequest, _: bool = Depends
             "DUCKMAIL_API_KEY": request.duckmail_api_key,
             "EMAIL_DOMAIN": request.email_domain,
             "CONCURRENT_THREADS": str(request.concurrent_threads),
-            "TURNSTILE_SOLVER_URL": solver_url
+            "TURNSTILE_SOLVER_URL": solver_url,
+            "PROXY_URL": (request.proxy_url or "").strip(),
+            "PROXY_SECRET_ID": (request.proxy_secret_id or "").strip(),
+            "PROXY_SECRET_KEY": (request.proxy_secret_key or "").strip(),
+            "PROXY_HOST": (request.proxy_host or "").strip(),
+            "PROXY_PORT": str(request.proxy_port or "").strip(),
+            "PROXY_SCHEME": (request.proxy_scheme or "http").strip()
         }
         if request.yescaptcha_key:
             config["YESCAPTCHA_KEY"] = request.yescaptcha_key
@@ -467,7 +497,13 @@ async def start_register(request: RegisterStartRequest, _: bool = Depends(verify
             "DUCKMAIL_API_KEY": request.config.duckmail_api_key,
             "EMAIL_DOMAIN": request.config.email_domain,
             "CONCURRENT_THREADS": str(request.config.concurrent_threads),
-            "TURNSTILE_SOLVER_URL": solver_url
+            "TURNSTILE_SOLVER_URL": solver_url,
+            "PROXY_URL": (request.config.proxy_url or "").strip(),
+            "PROXY_SECRET_ID": (request.config.proxy_secret_id or "").strip(),
+            "PROXY_SECRET_KEY": (request.config.proxy_secret_key or "").strip(),
+            "PROXY_HOST": (request.config.proxy_host or "").strip(),
+            "PROXY_PORT": str(request.config.proxy_port or "").strip(),
+            "PROXY_SCHEME": (request.config.proxy_scheme or "http").strip()
         }
         if request.config.yescaptcha_key:
             config["YESCAPTCHA_KEY"] = request.config.yescaptcha_key
@@ -486,6 +522,12 @@ async def start_register(request: RegisterStartRequest, _: bool = Depends(verify
         env["DUCKMAIL_API_KEY"] = request.config.duckmail_api_key
         env["EMAIL_DOMAIN"] = request.config.email_domain
         env["CONCURRENT_THREADS"] = str(request.config.concurrent_threads)
+        env["PROXY_URL"] = (request.config.proxy_url or "").strip()
+        env["PROXY_SECRET_ID"] = (request.config.proxy_secret_id or "").strip()
+        env["PROXY_SECRET_KEY"] = (request.config.proxy_secret_key or "").strip()
+        env["PROXY_HOST"] = (request.config.proxy_host or "").strip()
+        env["PROXY_PORT"] = str(request.config.proxy_port or "").strip()
+        env["PROXY_SCHEME"] = (request.config.proxy_scheme or "http").strip()
         if request.config.yescaptcha_key:
             env["YESCAPTCHA_KEY"] = request.config.yescaptcha_key
 

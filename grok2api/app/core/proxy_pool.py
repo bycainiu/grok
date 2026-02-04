@@ -5,6 +5,7 @@ import aiohttp
 import time
 from typing import Optional, List
 from app.core.logger import logger
+from app.core.proxy_secret import KdlSecretProxy
 
 
 class ProxyPool:
@@ -18,6 +19,7 @@ class ProxyPool:
         self._fetch_interval: int = 300  # 5分钟刷新一次
         self._enabled: bool = False
         self._lock = asyncio.Lock()
+        self._secret_provider: Optional[KdlSecretProxy] = None
     
     def configure(self, proxy_url: str, proxy_pool_url: str = "", proxy_pool_interval: int = 300):
         """配置代理池
@@ -27,7 +29,8 @@ class ProxyPool:
             proxy_pool_url: 代理池API URL，返回单个代理地址
             proxy_pool_interval: 代理池刷新间隔（秒）
         """
-        self._static_proxy = self._normalize_proxy(proxy_url) if proxy_url else None
+        self._secret_provider = KdlSecretProxy.from_url(proxy_url) if proxy_url else None
+        self._static_proxy = None if self._secret_provider else (self._normalize_proxy(proxy_url) if proxy_url else None)
         pool_url = proxy_pool_url.strip() if proxy_pool_url else None
         if pool_url and self._looks_like_proxy_url(pool_url):
             normalized_proxy = self._normalize_proxy(pool_url)
@@ -43,8 +46,11 @@ class ProxyPool:
         
         if self._enabled:
             logger.info(f"[ProxyPool] 代理池已启用: {self._pool_url}, 刷新间隔: {self._fetch_interval}s")
-        elif self._static_proxy:
-            logger.info(f"[ProxyPool] 使用静态代理: {self._static_proxy}")
+        elif self._secret_provider or self._static_proxy:
+            if self._secret_provider:
+                logger.info("[ProxyPool] 使用KDL动态代理")
+            else:
+                logger.info(f"[ProxyPool] 使用静态代理: {self._static_proxy}")
             self._current_proxy = self._static_proxy
         else:
             logger.info("[ProxyPool] 未配置代理")
@@ -57,7 +63,7 @@ class ProxyPool:
         """
         # 如果未启用代理池，返回静态代理
         if not self._enabled:
-            return self._static_proxy
+            return await self._get_static_proxy()
         
         # 检查是否需要刷新
         now = time.time()
@@ -76,6 +82,8 @@ class ProxyPool:
             新的代理URL或None
         """
         if not self._enabled:
+            if self._secret_provider:
+                return await self._secret_provider.force_refresh()
             return self._static_proxy
         
         async with self._lock:
@@ -104,23 +112,23 @@ class ProxyPool:
                             logger.error(f"[ProxyPool] 代理格式无效: {proxy}")
                             # 降级到静态代理
                             if not self._current_proxy:
-                                self._current_proxy = self._static_proxy
+                                self._current_proxy = await self._get_static_proxy()
                     else:
                         logger.error(f"[ProxyPool] 获取代理失败: HTTP {response.status}")
                         # 降级到静态代理
                         if not self._current_proxy:
-                            self._current_proxy = self._static_proxy
+                            self._current_proxy = await self._get_static_proxy()
         
         except asyncio.TimeoutError:
             logger.error("[ProxyPool] 获取代理超时")
             if not self._current_proxy:
-                self._current_proxy = self._static_proxy
+                self._current_proxy = await self._get_static_proxy()
         
         except Exception as e:
             logger.error(f"[ProxyPool] 获取代理异常: {e}")
             # 降级到静态代理
             if not self._current_proxy:
-                self._current_proxy = self._static_proxy
+                self._current_proxy = await self._get_static_proxy()
     
     def _validate_proxy(self, proxy: str) -> bool:
         """验证代理格式
@@ -156,6 +164,11 @@ class ProxyPool:
     def _looks_like_proxy_url(self, url: str) -> bool:
         """判断URL是否像代理地址（避免误把代理池API当代理）"""
         return url.startswith(("sock5://", "sock5h://", "socks5://", "socks5h://"))
+
+    async def _get_static_proxy(self) -> Optional[str]:
+        if self._secret_provider:
+            return await self._secret_provider.get_proxy()
+        return self._static_proxy
     
     def get_current_proxy(self) -> Optional[str]:
         """获取当前使用的代理（同步方法）

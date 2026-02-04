@@ -5,6 +5,7 @@ import os
 import time
 import requests
 from .env_loader import load_register_env
+from .proxy_manager import get_proxy_url
 
 load_register_env()
 
@@ -26,6 +27,8 @@ class TurnstileService:
         self.solver_url = resolved_solver_url.rstrip("/")
         self.yescaptcha_api = "https://api.yescaptcha.com"
         self.request_timeout = int(os.getenv("TURNSTILE_SOLVER_TIMEOUT", str(DEFAULT_TIMEOUT_SECONDS)))
+        proxy_url = get_proxy_url()
+        self.proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
 
     def create_task(self, siteurl, sitekey):
         """
@@ -42,7 +45,7 @@ class TurnstileService:
                     "websiteKey": sitekey
                 }
             }
-            response = requests.post(url, json=payload, timeout=self.request_timeout)
+            response = requests.post(url, json=payload, timeout=self.request_timeout, proxies=self.proxies)
             response.raise_for_status()
             data = response.json()
             if data.get('errorId') != 0:
@@ -54,7 +57,7 @@ class TurnstileService:
         else:
             # 使用本地 Turnstile Solver
             url = f"{self.solver_url}/turnstile?url={siteurl}&sitekey={sitekey}"
-            response = requests.get(url, timeout=self.request_timeout)
+            response = requests.get(url, timeout=self.request_timeout, proxies=self.proxies)
             response.raise_for_status()
             data = response.json()
             if data.get('errorId') not in (None, 0):
@@ -81,7 +84,7 @@ class TurnstileService:
                         "clientKey": self.yescaptcha_key,
                         "taskId": task_id
                     }
-                    response = requests.post(url, json=payload, timeout=self.request_timeout)
+                    response = requests.post(url, json=payload, timeout=self.request_timeout, proxies=self.proxies)
                     response.raise_for_status()
                     data = response.json()
 
@@ -104,7 +107,7 @@ class TurnstileService:
                 else:
                     # 使用本地 Turnstile Solver
                     url = f"{self.solver_url}/result?id={task_id}"
-                    response = requests.get(url, timeout=self.request_timeout)
+                    response = requests.get(url, timeout=self.request_timeout, proxies=self.proxies)
                     response.raise_for_status()
                     data = response.json()
                     if data.get('errorId') not in (None, 0):

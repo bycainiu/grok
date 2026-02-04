@@ -7,6 +7,7 @@ import time
 import requests
 from typing import Optional, Callable
 from .env_loader import load_register_env
+from .proxy_manager import get_proxy_url
 
 load_register_env()
 
@@ -34,6 +35,8 @@ class DuckMailClient:
         """
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key.strip()
+        if not proxy:
+            proxy = get_proxy_url()
         self.proxies = {"http": proxy, "https": proxy} if proxy else None
         self.verify_ssl = verify_ssl
         self.log_callback = log_callback

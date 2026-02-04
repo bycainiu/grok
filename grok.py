@@ -36,14 +36,13 @@ except ImportError:
 from bs4 import BeautifulSoup
 
 from g import DuckMailEmailService, TurnstileService
+from g.proxy_manager import get_proxy_url
 
 # 基础配置
 site_url = "https://accounts.x.ai"
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
-PROXIES = {
-    # "http": "http://127.0.0.1:10808",
-    # "https": "http://127.0.0.1:10808"
-}
+_proxy_url = get_proxy_url()
+PROXIES = {"http": _proxy_url, "https": _proxy_url} if _proxy_url else None
 
 # 动态获取的全局变量
 config = {
@@ -357,7 +356,7 @@ def main():
     # 1. 扫描参数
     print("[*] 正在初始化...")
     start_url = f"{site_url}/sign-up"
-    with requests.Session(impersonate="chrome120") as s:
+    with requests.Session(impersonate="chrome120", proxies=PROXIES) as s:
         try:
             html = s.get(start_url).text
             # Key
